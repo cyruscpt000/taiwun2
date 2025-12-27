@@ -22,7 +22,7 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 20
-          cache: 'npm'
+          # 這裡移除了 cache: 'npm'，避免報錯
 
       - name: Install dependencies
         run: npm install
@@ -36,7 +36,6 @@ jobs:
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
         with:
-          # 注意：Vite 打包後會放喺 dist 資料夾
           path: './dist'
 
       - name: Deploy to GitHub Pages

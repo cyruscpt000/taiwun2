@@ -1,20 +1,18 @@
-<div align="center">
-<img width="1200" height="475" alt="GHBanner" src="https://github.com/user-attachments/assets/0aa67016-6eaf-458a-adb2-6e31a0763ed6" />
-</div>
 
-# Run and deploy your AI Studio app
+# ✈️ 台北 2024 旅遊計畫 (大哥 & 小媛)
 
-This contains everything you need to run your app locally.
+呢個係大哥同小媛專屬嘅台北旅遊 App！
 
-View your app in AI Studio: https://ai.studio/apps/drive/1d_-6dYJ9JULK7NejkHEzyJZTPQk3m52d
+## 🌟 功能
+- **即時行程表**：每日行程一目了然。
+- **Firebase 同步**：大哥同小媛記帳，對方手機即時更新。
+- **AI 靈感**：Gemini 會根據行程畀建議。
+- **準備清單**：唔會漏帶入台證同悠遊卡。
 
-## Run Locally
+## 🚀 點樣睇網址？
+如果你已經設定好 GitHub Pages，網址會喺 `Settings > Pages` 入面搵到。
 
-**Prerequisites:**  Node.js
-
-
-1. Install dependencies:
-   `npm install`
-2. Set the `GEMINI_API_KEY` in [.env.local](.env.local) to your Gemini API key
-3. Run the app:
-   `npm run dev`
+## 🛠️ 技術
+- React + Tailwind CSS (視覺設計)
+- Firebase Firestore (資料庫)
+- GitHub Actions (自動化發布)

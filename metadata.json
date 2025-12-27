@@ -1,0 +1,7 @@
+{
+  "name": "Taipei Travel Planner",
+  "description": "A beautiful, collaborative travel itinerary and expense tracker for Taipei, featuring a timeline view, shared packing list, and AI-powered recommendations.",
+  "requestFramePermissions": [
+    "geolocation"
+  ]
+}

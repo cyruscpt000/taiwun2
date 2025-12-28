@@ -27,7 +27,9 @@ import {
   Navigation,
   X,
   StickyNote,
-  Zap
+  Zap,
+  Calculator,
+  ArrowRightLeft
 } from 'lucide-react';
 import { db } from './firebase';
 import { collection, onSnapshot, doc, updateDoc, setDoc, deleteDoc, query, orderBy, getDocs } from 'firebase/firestore';
@@ -94,6 +96,12 @@ const App: React.FC = () => {
   const [isSaving, setIsSaving] = useState(false);
   const [isUpdatingFlight, setIsUpdatingFlight] = useState<string | null>(null);
   
+  // Currency Calculator states
+  const [showCalc, setShowCalc] = useState(false);
+  const [hkdInput, setHkdInput] = useState('');
+  const [twdInput, setTwdInput] = useState('');
+  const [exchangeRate, setExchangeRate] = useState(4.1);
+
   const [itineraryItems, setItineraryItems] = useState<ItineraryItem[]>([]);
   const [packingList, setPackingList] = useState<PackingItem[]>([]);
   const [expenses, setExpenses] = useState<Expense[]>([]);
@@ -143,6 +151,25 @@ const App: React.FC = () => {
   const currentDayLocations = useMemo(() => itineraryItems.filter(i => i.day === activeDay && i.location).map(i => i.location), [itineraryItems, activeDay]);
   const currentDayFlights = useMemo(() => itineraryItems.filter(i => i.day === activeDay && i.type === 'FLIGHT'), [itineraryItems, activeDay]);
   const currentDayOtherItems = useMemo(() => itineraryItems.filter(i => i.day === activeDay && i.type !== 'FLIGHT'), [itineraryItems, activeDay]);
+
+  // Currency Converter Logic
+  const handleHkdChange = (val: string) => {
+    setHkdInput(val);
+    if (val && !isNaN(Number(val))) {
+      setTwdInput((Number(val) * exchangeRate).toFixed(0));
+    } else {
+      setTwdInput('');
+    }
+  };
+
+  const handleTwdChange = (val: string) => {
+    setTwdInput(val);
+    if (val && !isNaN(Number(val))) {
+      setHkdInput((Number(val) / exchangeRate).toFixed(1));
+    } else {
+      setHkdInput('');
+    }
+  };
 
   // Actions
   const saveItinerary = async () => {
@@ -194,16 +221,25 @@ const App: React.FC = () => {
       const dateStr = TRAVEL_DATES.find(d => d.day === flight.day)?.label || "today";
       const result = await fetchFlightStatus(flight.title, dateStr);
       
-      // 簡單提取資訊 (因為 Gemini 返回的是純文本)
-      const eta = result.match(/ETA: ([^,]+)/)?.[1] || "";
-      const terminal = result.match(/Terminal: ([^,]+)/)?.[1] || "";
-      const gate = result.match(/Gate: ([^,]+)/)?.[1] || "";
+      const cleanData = (val: string | undefined) => {
+        if (!val) return "";
+        const v = val.trim();
+        const low = v.toLowerCase();
+        if (low.includes('tbd') || low.includes('unknown') || low.includes('n/a') || low.includes('no info') || low.includes('not found')) {
+          return "";
+        }
+        return v;
+      };
+
+      const eta = cleanData(result.match(/ETA: ([^,]+)/)?.[1]);
+      const terminal = cleanData(result.match(/Terminal: ([^,]+)/)?.[1]);
+      const gate = cleanData(result.match(/Gate: ([^,]+)/)?.[1]);
 
       await updateDoc(doc(db, "itinerary", flight.id), {
-        arrivalTime: eta.trim(),
-        terminal: terminal.trim(),
-        gate: gate.trim(),
-        notes: `AI 於 ${new Date().toLocaleTimeString()} 更新: ${result}`
+        arrivalTime: eta,
+        terminal: terminal,
+        gate: gate,
+        notes: `AI 於 ${new Date().toLocaleTimeString()} 檢查狀態: ${result}`
       });
     } catch (e) {
       console.error(e);
@@ -258,12 +294,69 @@ const App: React.FC = () => {
                     </span>
                 </div>
             </div>
-            <div className="flex -space-x-3">
-                {members.map(m => (
-                    <div key={m.name} onClick={() => setCurrentMemberName(m.name)} className={`w-12 h-12 rounded-full border-2 border-white overflow-hidden shadow-md cursor-pointer transition-all ${currentMemberName === m.name ? 'ring-2 ring-[#8DB359] scale-110 z-10' : 'opacity-40 hover:opacity-100'}`}>
-                        <img src={m.avatar} alt={m.name} className="w-full h-full object-cover" />
+            <div className="flex flex-col items-end gap-2">
+                <div className="flex -space-x-3 items-center">
+                    {/* Currency Button */}
+                    <button 
+                      onClick={() => setShowCalc(!showCalc)}
+                      className={`w-10 h-10 rounded-full flex items-center justify-center border-2 border-white shadow-md transition-all mr-2 ${showCalc ? 'bg-[#8DB359] text-white scale-110' : 'bg-[#EEDEB0] text-[#8D6E63]'}`}
+                    >
+                      <Calculator size={18} />
+                    </button>
+
+                    {members.map(m => (
+                        <div key={m.name} onClick={() => setCurrentMemberName(m.name)} className={`w-12 h-12 rounded-full border-2 border-white overflow-hidden shadow-md cursor-pointer transition-all ${currentMemberName === m.name ? 'ring-2 ring-[#8DB359] scale-110 z-10' : 'opacity-40 hover:opacity-100'}`}>
+                            <img src={m.avatar} alt={m.name} className="w-full h-full object-cover" />
+                        </div>
+                    ))}
+                </div>
+
+                {/* Popover Currency Calculator */}
+                {showCalc && (
+                  <div className="absolute top-24 right-8 bg-white p-5 rounded-[30px] border-4 border-[#EEDEB0] shadow-2xl z-50 w-64 animate-in fade-in zoom-in-95 duration-200">
+                    <div className="flex justify-between items-center mb-4">
+                      <h4 className="font-black text-[#4E342E] text-xs uppercase flex items-center gap-2">
+                        <ArrowRightLeft size={14} className="text-[#8DB359]"/> 匯率換算
+                      </h4>
+                      <button onClick={() => setShowCalc(false)} className="text-[#D7CCC8]"><X size={16}/></button>
                     </div>
-                ))}
+                    <div className="space-y-3">
+                      <div className="relative">
+                        <span className="absolute left-3 top-1/2 -translate-y-1/2 text-[10px] font-black text-[#8DB359]">HKD</span>
+                        <input 
+                          type="number" 
+                          value={hkdInput}
+                          onChange={(e) => handleHkdChange(e.target.value)}
+                          placeholder="0.0"
+                          className="w-full bg-[#FDFBF3] pl-10 pr-4 py-3 rounded-2xl border-none font-black text-xs focus:ring-2 ring-[#8DB359]" 
+                        />
+                      </div>
+                      <div className="flex justify-center py-1">
+                        <ArrowRightLeft size={14} className="text-[#EEDEB0] rotate-90" />
+                      </div>
+                      <div className="relative">
+                        <span className="absolute left-3 top-1/2 -translate-y-1/2 text-[10px] font-black text-[#8DB359]">TWD</span>
+                        <input 
+                          type="number"
+                          value={twdInput}
+                          onChange={(e) => handleTwdChange(e.target.value)}
+                          placeholder="0"
+                          className="w-full bg-[#FDFBF3] pl-10 pr-4 py-3 rounded-2xl border-none font-black text-xs focus:ring-2 ring-[#8DB359]" 
+                        />
+                      </div>
+                      <div className="pt-2 border-t border-[#FDFBF3] flex items-center justify-between">
+                        <span className="text-[9px] font-black opacity-40">匯率 1 : </span>
+                        <input 
+                          type="number" 
+                          step="0.1"
+                          value={exchangeRate}
+                          onChange={(e) => setExchangeRate(Number(e.target.value))}
+                          className="w-12 bg-transparent text-right font-black text-[10px] text-[#8D6E63] outline-none" 
+                        />
+                      </div>
+                    </div>
+                  </div>
+                )}
             </div>
         </div>
       </header>
@@ -380,6 +473,9 @@ const App: React.FC = () => {
                 {currentDayOtherItems.map(item => (
                     <TimelineCard key={item.id} item={item} onDelete={deleteItinerary} onEdit={handleEditItin} />
                 ))}
+                {itineraryItems.filter(i => i.day === activeDay).length === 0 && (
+                  <p className="text-center opacity-20 font-black italic py-20">今日仲未有行程，快啲加返個！</p>
+                )}
             </div>
           </div>
         ) : activeTab === TabType.MAP ? (
@@ -410,7 +506,7 @@ const App: React.FC = () => {
                     </div>
                     <div className="bg-white p-6 rounded-[35px] border-4 border-[#EEDEB0]">
                         <p className="text-[10px] font-black text-[#8D6E63] uppercase">約港幣 (HKD)</p>
-                        <p className="text-2xl font-black tabular-nums">${(totalTwd / 4.1).toFixed(1)}</p>
+                        <p className="text-2xl font-black tabular-nums">${(totalTwd / exchangeRate).toFixed(1)}</p>
                     </div>
                 </div>
                 <div className="bg-white rounded-[40px] p-6 border-4 border-[#E8F1E7] mb-10">

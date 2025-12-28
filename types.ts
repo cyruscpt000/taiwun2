@@ -1,6 +1,7 @@
 
 export enum TabType {
   ITINERARY = 'ITINERARY',
+  MAP = 'MAP',
   INFO = 'INFO',
   LEDGER = 'LEDGER',
   PREP = 'PREP',

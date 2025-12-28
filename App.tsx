@@ -13,7 +13,6 @@ import {
   Bus, 
   Utensils, 
   Camera,
-  X,
   Hotel,
   Trash2,
   RefreshCw,
@@ -22,35 +21,43 @@ import {
   Heart,
   Star,
   ShoppingBag,
-  Info
+  Info,
+  Map as MapIcon,
+  CloudRain,
+  Navigation
 } from 'lucide-react';
 import { db } from './firebase';
 import { collection, onSnapshot, doc, updateDoc, setDoc, deleteDoc, query, orderBy, getDocs } from 'firebase/firestore';
 
 // --- Sub-components ---
 
-const TimelineCard: React.FC<{ item: ItineraryItem }> = ({ item }) => {
+const TimelineCard: React.FC<{ item: ItineraryItem, onDelete: (id: string) => void }> = ({ item, onDelete }) => {
   const Icon = () => {
     switch (item.type) {
-      case 'FLIGHT': return <Plane className="text-white" size={24} />;
-      case 'TRANSPORT': return <Bus className="text-white" size={24} />;
-      case 'FOOD': return <Utensils className="text-white" size={24} />;
-      case 'SIGHT': return <Camera className="text-white" size={24} />;
-      case 'HOTEL': return <Hotel className="text-white" size={24} />;
-      default: return <MapPin className="text-white" size={24} />;
+      case 'FLIGHT': return <Plane className="text-white" size={20} />;
+      case 'TRANSPORT': return <Bus className="text-white" size={20} />;
+      case 'FOOD': return <Utensils className="text-white" size={20} />;
+      case 'SIGHT': return <Camera className="text-white" size={20} />;
+      case 'HOTEL': return <Hotel className="text-white" size={20} />;
+      default: return <MapPin className="text-white" size={20} />;
     }
   };
 
   return (
-    <div className="relative flex gap-6 mb-10 group transition-all">
+    <div className="relative flex gap-4 mb-8 group">
       <div className="flex flex-col items-center">
-        <div className="text-lg font-black text-[#4E342E] tabular-nums">{item.time}</div>
-        <div className="z-10 w-4 h-4 rounded-full bg-[#8DB359] border-[4px] border-[#FCF6E5] mt-2"></div>
+        <div className="text-sm font-black text-[#4E342E] tabular-nums">{item.time}</div>
+        <div className="z-10 w-3 h-3 rounded-full bg-[#8DB359] border-2 border-[#FCF6E5] mt-1 shadow-sm"></div>
       </div>
-      <div className="flex-1 bg-white p-6 rounded-[35px] shadow-sm border-2 border-[#EEDEB0] relative">
-        <div className="inline-flex p-3 bg-[#8DB359] rounded-2xl mb-4 shadow-sm"><Icon /></div>
-        <h3 className="font-black text-[#4E342E] text-xl leading-tight mb-1">{item.title}</h3>
-        {item.location && <p className="text-[10px] text-[#8DB359] font-black uppercase mt-2">{item.location}</p>}
+      <div className="flex-1 bg-white p-5 rounded-[30px] shadow-sm border-2 border-[#EEDEB0] relative group-hover:border-[#8DB359] transition-all">
+        <div className="flex justify-between items-start">
+            <div className="inline-flex p-2.5 bg-[#8DB359] rounded-xl mb-3 shadow-sm"><Icon /></div>
+            <button onClick={() => onDelete(item.id)} className="p-2 text-[#D7CCC8] hover:text-rose-500 opacity-0 group-hover:opacity-100 transition-all">
+                <Trash2 size={16} />
+            </button>
+        </div>
+        <h3 className="font-black text-[#4E342E] text-lg leading-tight">{item.title}</h3>
+        {item.location && <p className="text-[9px] text-[#8DB359] font-black uppercase mt-2 flex items-center gap-1"><MapPin size={10} /> {item.location}</p>}
       </div>
     </div>
   );
@@ -64,40 +71,32 @@ const App: React.FC = () => {
   const [currentMemberName, setCurrentMemberName] = useState<string>(INITIAL_MEMBERS[0].name);
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
-  const [deletingId, setDeletingId] = useState<string | null>(null);
   
   const [itineraryItems, setItineraryItems] = useState<ItineraryItem[]>([]);
   const [packingList, setPackingList] = useState<PackingItem[]>([]);
   const [expenses, setExpenses] = useState<Expense[]>([]);
 
   // Form states
+  const [newItinTime, setNewItinTime] = useState('');
+  const [newItinTitle, setNewItinTitle] = useState('');
+  const [newItinLocation, setNewItinLocation] = useState('');
+  const [newItinType, setNewItinType] = useState<ItineraryItem['type']>('SIGHT');
   const [newPrepItemName, setNewPrepItemName] = useState('');
   const [newExpenseDesc, setNewExpenseDesc] = useState('');
   const [newExpenseAmount, setNewExpenseAmount] = useState('');
   const [newExpenseCategory, setNewExpenseCategory] = useState('FOOD');
 
-  // 強化數據同步
+  // Countdown & Weather Logic
+  const countdown = useMemo(() => {
+    const target = new Date('2025-12-30').getTime();
+    const now = new Date().getTime();
+    const diff = Math.ceil((target - now) / (1000 * 60 * 60 * 24));
+    return diff > 0 ? diff : 0;
+  }, []);
+
+  // Sync Data
   useEffect(() => {
-    if (!db) {
-        setIsLoading(false);
-        return;
-    }
-
-    const syncCloud = async () => {
-      try {
-        const packSnap = await getDocs(collection(db, "packingList"));
-        if (packSnap.empty || packSnap.size < 5) {
-          const batchPromises = INITIAL_PACKING_LIST.map(item => 
-            setDoc(doc(db, "packingList", item.id), item)
-          );
-          await Promise.all(batchPromises);
-        }
-      } catch (e) {
-        console.error("Cloud seed failed:", e);
-      }
-    };
-
-    syncCloud();
+    if (!db) { setIsLoading(false); return; }
 
     const unsubItinerary = onSnapshot(query(collection(db, "itinerary"), orderBy("time")), (snapshot) => {
       const items: ItineraryItem[] = [];
@@ -121,76 +120,40 @@ const App: React.FC = () => {
     return () => { unsubItinerary(); unsubPacking(); unsubExpenses(); };
   }, []);
 
-  const filteredPrepList = useMemo(() => {
-    return packingList
-      .filter(item => item.category === activePrepCategory)
-      .sort((a, b) => a.id.includes('custom') ? -1 : 1);
-  }, [packingList, activePrepCategory]);
-
   const totalTwd = useMemo(() => expenses.reduce((sum, e) => sum + (Number(e.amount) || 0), 0), [expenses]);
+  const currentDayLocations = useMemo(() => itineraryItems.filter(i => i.day === activeDay && i.location).map(i => i.location), [itineraryItems, activeDay]);
 
   // Actions
-  const toggleMemberCompletion = async (itemId: string, memberName: string) => {
-    if (!db) return;
-    const item = packingList.find(i => i.id === itemId);
-    if (!item) return;
-
-    let newCompletedBy = [...(item.completedBy || [])];
-    if (newCompletedBy.includes(memberName)) {
-      newCompletedBy = newCompletedBy.filter(name => name !== memberName);
-    } else {
-      newCompletedBy.push(memberName);
-    }
-    
-    await updateDoc(doc(db, "packingList", itemId), { completedBy: newCompletedBy });
-  };
-
-  const addPrepItem = async () => {
-    const name = newPrepItemName.trim();
-    if (!name || !db || isSaving) return;
+  const addItinerary = async () => {
+    if (!newItinTitle.trim() || !newItinTime.trim() || !db || isSaving) return;
     setIsSaving(true);
     try {
-      const newId = `custom-${Date.now()}`;
-      await setDoc(doc(db, "packingList", newId), {
-        id: newId,
-        name: name,
-        completedBy: [],
-        category: activePrepCategory
-      });
-      setNewPrepItemName('');
-    } catch (e) { alert("儲存失敗"); } finally { setIsSaving(false); }
+      const newId = `itin-${Date.now()}`;
+      await setDoc(doc(db, "itinerary", newId), { id: newId, time: newItinTime, title: newItinTitle, location: newItinLocation, type: newItinType, day: activeDay });
+      setNewItinTitle(''); setNewItinLocation(''); setNewItinTime('');
+    } finally { setIsSaving(false); }
   };
 
-  const deletePrepItem = async (id: string) => {
-    if (!db || deletingId) return;
-    setDeletingId(id);
-    try { await deleteDoc(doc(db, "packingList", id)); } finally { setDeletingId(null); }
+  const deleteItinerary = async (id: string) => {
+    if (!db || !window.confirm("確定刪除？")) return;
+    await deleteDoc(doc(db, "itinerary", id));
   };
 
   const addExpense = async () => {
-    const desc = newExpenseDesc.trim();
     const amount = parseFloat(newExpenseAmount);
-    if (!desc || isNaN(amount) || !db || isSaving) return;
-    
+    if (!newExpenseDesc.trim() || isNaN(amount) || !db || isSaving) return;
     setIsSaving(true);
     try {
       const newId = `expense-${Date.now()}`;
-      await setDoc(doc(db, "expenses", newId), {
-        id: newId,
-        description: desc,
-        amount: amount,
-        category: newExpenseCategory,
-        paidBy: currentMemberName,
-        date: new Date().toISOString()
-      });
-      setNewExpenseDesc('');
-      setNewExpenseAmount('');
-    } catch (e) { alert("記帳失敗"); } finally { setIsSaving(false); }
+      await setDoc(doc(db, "expenses", newId), { id: newId, description: newExpenseDesc, amount, category: newExpenseCategory, paidBy: currentMemberName, date: new Date().toISOString() });
+      setNewExpenseDesc(''); setNewExpenseAmount('');
+    } finally { setIsSaving(false); }
   };
 
-  const deleteExpense = async (id: string) => {
-    if (!db) return;
-    try { await deleteDoc(doc(db, "expenses", id)); } catch (e) { alert("刪除失敗"); }
+  const openGoogleMapsRoute = () => {
+    if (currentDayLocations.length === 0) return;
+    const url = `https://www.google.com/maps/dir/${currentDayLocations.map(encodeURIComponent).join('/')}`;
+    window.open(url, '_blank');
   };
 
   return (
@@ -199,16 +162,23 @@ const App: React.FC = () => {
       {isLoading && (
         <div className="fixed inset-0 bg-[#FDFBF3] z-[200] flex flex-col items-center justify-center">
           <RefreshCw className="text-[#8DB359] animate-spin mb-4" size={40} />
-          <p className="font-black text-[#4E342E] uppercase tracking-widest text-xs">小媛族正在連線...</p>
+          <p className="font-black text-[#4E342E] uppercase text-xs">小媛族同步中...</p>
         </div>
       )}
 
-      {/* Header */}
-      <header className="pt-12 pb-6 px-8 bg-[#FDFBF3] sticky top-0 z-40">
-        <div className="flex justify-between items-center mb-2">
+      {/* Header with Countdown & Weather */}
+      <header className="pt-10 pb-6 px-8 bg-[#FDFBF3] sticky top-0 z-40">
+        <div className="flex justify-between items-start mb-4">
             <div className="flex flex-col">
                 <h1 className="text-3xl font-black text-[#85C2A2] tracking-tighter drop-shadow-sm">小媛族</h1>
-                <p className="text-[10px] font-bold text-[#8DB359] flex items-center gap-1 uppercase tracking-wider">✈️ 2025 TAIPEI TRIP</p>
+                <div className="flex gap-2 mt-1">
+                    <span className="bg-[#8DB359] text-white px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-widest flex items-center gap-1">
+                        <Calendar size={10} /> 倒數 {countdown} 天
+                    </span>
+                    <span className="bg-[#EEDEB0] text-[#8D6E63] px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-widest flex items-center gap-1">
+                        <CloudRain size={10} /> 台北 18°C 陰
+                    </span>
+                </div>
             </div>
             <div className="flex -space-x-3">
                 {members.map(m => (
@@ -221,8 +191,8 @@ const App: React.FC = () => {
       </header>
 
       <main className="flex-1 px-6">
-        {activeTab === TabType.ITINERARY ? (
-          <div className="pb-8">
+        {/* Days Selector - Shared by Itinerary and Map */}
+        {(activeTab === TabType.ITINERARY || activeTab === TabType.MAP) && (
             <div className="flex gap-4 overflow-x-auto custom-scrollbar mb-8 py-2">
                 {TRAVEL_DATES.map(date => (
                 <div key={date.day} onClick={() => setActiveDay(date.day)} className={`flex-shrink-0 flex flex-col items-center justify-center w-16 h-20 rounded-3xl transition-all ${
@@ -233,49 +203,72 @@ const App: React.FC = () => {
                 </div>
                 ))}
             </div>
-            <div className="space-y-4">
-                {itineraryItems.filter(i => i.day === activeDay).map(item => <TimelineCard key={item.id} item={item} />)}
+        )}
+
+        {activeTab === TabType.ITINERARY ? (
+          <div className="pb-8">
+            <div className="bg-white rounded-[40px] p-6 border-4 border-[#E8F1E7] shadow-sm mb-10">
+                <h3 className="font-black text-[#4E342E] mb-4 flex items-center gap-2 text-sm"><Edit3 size={16} /> 新增 Day {activeDay} 行程</h3>
+                <div className="space-y-4">
+                    <div className="flex gap-2">
+                        <input type="time" value={newItinTime} onChange={e => setNewItinTime(e.target.value)} className="bg-[#FDFBF3] p-3 rounded-2xl border-none font-black text-xs w-28 focus:ring-2 ring-[#8DB359]" />
+                        <input type="text" value={newItinTitle} onChange={e => setNewItinTitle(e.target.value)} placeholder="行程名 (例: 買大腸包小腸)" className="flex-1 bg-[#FDFBF3] p-3 rounded-2xl border-none font-black text-xs focus:ring-2 ring-[#8DB359]" />
+                    </div>
+                    <input type="text" value={newItinLocation} onChange={e => setNewItinLocation(e.target.value)} placeholder="地點 (可選)" className="w-full bg-[#FDFBF3] p-3 rounded-2xl border-none font-black text-xs focus:ring-2 ring-[#8DB359]" />
+                    <div className="flex gap-1.5 overflow-x-auto pb-1 custom-scrollbar">
+                        {[{ id: 'SIGHT', label: '景點', icon: <Camera size={14}/> }, { id: 'FOOD', label: '食嘢', icon: <Utensils size={14}/> }, { id: 'TRANSPORT', label: '交通', icon: <Bus size={14}/> }, { id: 'HOTEL', label: '酒店', icon: <Hotel size={14}/> }, { id: 'FLIGHT', label: '飛機', icon: <Plane size={14}/> }].map(type => (
+                          <button key={type.id} onClick={() => setNewItinType(type.id as any)} className={`flex-shrink-0 flex items-center gap-1.5 px-3 py-2 rounded-xl text-[10px] font-black transition-all ${newItinType === type.id ? 'bg-[#8DB359] text-white' : 'bg-[#FDFBF3] text-[#8DB359] border border-[#E8F1E7]'}`}>
+                            {type.icon} {type.label}
+                          </button>
+                        ))}
+                    </div>
+                    <button onClick={addItinerary} disabled={isSaving || !newItinTitle} className="w-full py-3 bg-[#8DB359] text-white rounded-2xl font-black shadow-lg flex items-center justify-center gap-2 text-sm active:scale-95 transition-all">
+                        {isSaving ? <Loader2 size={18} className="animate-spin" /> : <><Plus size={18} /> 增加行程</>}
+                    </button>
+                </div>
+            </div>
+            <div className="space-y-2 relative timeline-line pl-2">
+                {itineraryItems.filter(i => i.day === activeDay).map(item => <TimelineCard key={item.id} item={item} onDelete={deleteItinerary} />)}
             </div>
           </div>
-        ) : activeTab === TabType.PREP ? (
-          <div className="pb-8">
-             <div className="grid grid-cols-4 gap-2 mb-8 bg-[#E9F3E8] p-1.5 rounded-[30px]">
-                {['TODO', 'LUGGAGE', 'WANT', 'BUY'].map(cat => (
-                  <button key={cat} onClick={() => setActivePrepCategory(cat as PrepCategory)} className={`py-3 rounded-[24px] text-[13px] font-black transition-all ${activePrepCategory === cat ? 'bg-[#8DB359] text-white shadow-md' : 'text-[#8DB359]/60'}`}>
-                    {cat === 'TODO' ? '待辦' : cat === 'LUGGAGE' ? '行李' : cat === 'WANT' ? '想去' : '採購'}
-                  </button>
-                ))}
-             </div>
-             <div className="relative mb-10">
-                <div className="bg-white rounded-[35px] border-4 border-[#E8F1E7] px-8 py-6 shadow-sm flex items-center min-h-[100px]">
-                   <input type="text" value={newPrepItemName} onChange={e => setNewPrepItemName(e.target.value)} placeholder={`新增項目...`} className="flex-1 bg-transparent border-none focus:ring-0 font-black text-[#5E4E42] text-xl outline-none" />
-                </div>
-                <button onClick={addPrepItem} disabled={isSaving || !newPrepItemName.trim()} className="absolute right-2 bottom-2 w-16 h-16 bg-[#8DB359] rounded-[24px] flex items-center justify-center text-white shadow-lg active:scale-90 transition-all"><Plus size={36} /></button>
-             </div>
-             <div className="space-y-6">
-                {filteredPrepList.map(item => (
-                    <div key={item.id} className="flex flex-col p-6 rounded-[35px] border-4 bg-white shadow-sm border-[#E8F1E7]">
-                      <div className="flex items-center justify-between mb-4">
-                         <span className="text-xl font-black text-[#5E4E42]">{item.name}</span>
-                         <button onClick={() => deletePrepItem(item.id)} className="p-3 text-[#D7CCC8] hover:text-rose-500 transition-colors"><Trash2 size={20} /></button>
-                      </div>
-                      <div className="flex gap-3">
-                        {members.map(m => {
-                          const isDone = (item.completedBy || []).includes(m.name);
-                          return (
-                            <button key={m.name} onClick={() => toggleMemberCompletion(item.id, m.name)} className={`px-5 py-3 rounded-full text-[11px] font-black flex items-center gap-2 border-2 ${isDone ? 'bg-[#8DB359] border-[#8DB359] text-white' : 'bg-white border-[#E8F1E7] text-[#8DB359]'}`}>
-                              <img src={m.avatar} className="w-5 h-5 rounded-full object-cover" /> {m.name}
-                            </button>
-                          );
-                        })}
-                      </div>
+        ) : activeTab === TabType.MAP ? (
+            <div className="pb-8">
+                <div className="bg-white rounded-[40px] p-8 border-4 border-[#E8F1E7] shadow-sm mb-10 text-center">
+                    <div className="w-20 h-20 bg-[#FDFBF3] rounded-full flex items-center justify-center mx-auto mb-4 text-[#8DB359]">
+                        <MapIcon size={40} />
                     </div>
-                ))}
-             </div>
-          </div>
+                    <h3 className="text-xl font-black text-[#4E342E] mb-2">Day {activeDay} 地圖路線</h3>
+                    <p className="text-xs font-bold text-[#8DB359] mb-6">今日共有 {currentDayLocations.length} 個地點</p>
+                    
+                    <button 
+                        onClick={openGoogleMapsRoute}
+                        disabled={currentDayLocations.length === 0}
+                        className="w-full py-5 bg-[#8DB359] text-white rounded-3xl font-black shadow-lg flex items-center justify-center gap-3 active:scale-95 transition-all disabled:opacity-50"
+                    >
+                        <Navigation size={24} /> 在 Google Maps 開啟路線
+                    </button>
+                </div>
+
+                <div className="space-y-4">
+                    {itineraryItems.filter(i => i.day === activeDay && i.location).map((item, idx) => (
+                        <div key={item.id} className="flex items-center gap-4 bg-white p-5 rounded-[30px] border-2 border-[#EEDEB0]">
+                            <div className="w-10 h-10 bg-[#8DB359] text-white rounded-full flex items-center justify-center font-black text-sm">
+                                {idx + 1}
+                            </div>
+                            <div className="flex-1">
+                                <p className="font-black text-[#4E342E]">{item.title}</p>
+                                <p className="text-[10px] text-[#8DB359] font-black">{item.location}</p>
+                            </div>
+                            <button onClick={() => window.open(`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(item.location || '')}`, '_blank')} className="p-3 text-[#8DB359] bg-[#FDFBF3] rounded-2xl active:scale-90 transition-all">
+                                <MapPin size={20} />
+                            </button>
+                        </div>
+                    ))}
+                    {currentDayLocations.length === 0 && <p className="text-center opacity-20 font-black italic py-10">今日暫無填寫地點嘅行程</p>}
+                </div>
+            </div>
         ) : activeTab === TabType.LEDGER ? (
             <div className="pt-4 pb-8">
-                {/* Total Summary */}
                 <div className="grid grid-cols-2 gap-4 mb-8">
                     <div className="bg-[#8DB359] p-6 rounded-[35px] shadow-lg text-white">
                         <p className="text-[10px] font-black uppercase opacity-80">總額 (TWD)</p>
@@ -286,48 +279,77 @@ const App: React.FC = () => {
                         <p className="text-2xl font-black tabular-nums">${(totalTwd / 4.1).toFixed(1)}</p>
                     </div>
                 </div>
-
-                {/* Input Area */}
                 <div className="bg-white rounded-[40px] p-6 border-4 border-[#E8F1E7] shadow-sm mb-10">
-                    <h3 className="font-black text-[#4E342E] mb-4 flex items-center gap-2"><Edit3 size={18} /> 快速記帳</h3>
+                    <h3 className="font-black text-[#4E342E] mb-4 flex items-center gap-2 text-sm"><Edit3 size={16} /> 快速記帳</h3>
                     <div className="space-y-4">
                         <div className="grid grid-cols-2 gap-3">
-                            <input type="text" value={newExpenseDesc} onChange={e => setNewExpenseDesc(e.target.value)} placeholder="項目名 (例: 魯肉飯)" className="bg-[#FDFBF3] p-4 rounded-2xl border-none font-black focus:ring-2 ring-[#8DB359] text-[#4E342E]" />
-                            <input type="number" value={newExpenseAmount} onChange={e => setNewExpenseAmount(e.target.value)} placeholder="金額 (TWD)" className="bg-[#FDFBF3] p-4 rounded-2xl border-none font-black focus:ring-2 ring-[#8DB359] text-[#4E342E]" />
+                            <input type="text" value={newExpenseDesc} onChange={e => setNewExpenseDesc(e.target.value)} placeholder="項目名" className="bg-[#FDFBF3] p-3 rounded-2xl border-none font-black text-xs focus:ring-2 ring-[#8DB359]" />
+                            <input type="number" value={newExpenseAmount} onChange={e => setNewExpenseAmount(e.target.value)} placeholder="金額 (TWD)" className="bg-[#FDFBF3] p-3 rounded-2xl border-none font-black text-xs focus:ring-2 ring-[#8DB359]" />
                         </div>
-                        <div className="flex gap-2">
+                        <div className="flex gap-1.5 overflow-x-auto pb-1 custom-scrollbar">
                             {['FOOD', 'TRANSPORT', 'SHOPPING', 'OTHER'].map(cat => (
-                                <button key={cat} onClick={() => setNewExpenseCategory(cat)} className={`flex-1 py-3 rounded-xl text-[10px] font-black transition-all ${newExpenseCategory === cat ? 'bg-[#8DB359] text-white' : 'bg-[#FDFBF3] text-[#8DB359]'}`}>
+                                <button key={cat} onClick={() => setNewExpenseCategory(cat)} className={`flex-shrink-0 px-4 py-2 rounded-xl text-[10px] font-black transition-all ${newExpenseCategory === cat ? 'bg-[#8DB359] text-white shadow-md' : 'bg-[#FDFBF3] text-[#8DB359]'}`}>
                                     {cat === 'FOOD' ? '餐飲' : cat === 'TRANSPORT' ? '交通' : cat === 'SHOPPING' ? '購物' : '其他'}
                                 </button>
                             ))}
                         </div>
-                        <button onClick={addExpense} disabled={isSaving} className="w-full py-4 bg-[#8DB359] text-white rounded-2xl font-black shadow-lg flex items-center justify-center gap-2 active:scale-95 transition-all">
-                           {isSaving ? <Loader2 className="animate-spin" /> : <><Plus size={20} /> 記低佢</>}
+                        <button onClick={addExpense} disabled={isSaving} className="w-full py-3 bg-[#8DB359] text-white rounded-2xl font-black shadow-lg flex items-center justify-center gap-2 text-sm active:scale-95 transition-all">
+                           {isSaving ? <Loader2 size={18} className="animate-spin" /> : <><Plus size={18} /> 記低佢</>}
                         </button>
                     </div>
                 </div>
-
-                {/* List */}
                 <div className="space-y-4">
                     {expenses.map(e => (
-                        <div key={e.id} className="bg-white p-6 rounded-[30px] border-2 border-[#EEDEB0] flex items-center justify-between shadow-sm">
-                            <div className="flex items-center gap-4">
-                                <div className="w-12 h-12 bg-[#FDFBF3] rounded-2xl flex items-center justify-center text-[#8DB359]">
-                                    {e.category === 'FOOD' ? <Utensils size={24}/> : e.category === 'SHOPPING' ? <ShoppingBag size={24}/> : e.category === 'TRANSPORT' ? <Bus size={24}/> : <Info size={24}/>}
+                        <div key={e.id} className="bg-white p-5 rounded-[30px] border-2 border-[#EEDEB0] flex items-center justify-between shadow-sm">
+                            <div className="flex items-center gap-3">
+                                <div className="w-10 h-10 bg-[#FDFBF3] rounded-2xl flex items-center justify-center text-[#8DB359]">
+                                    {e.category === 'FOOD' ? <Utensils size={20}/> : e.category === 'SHOPPING' ? <ShoppingBag size={20}/> : e.category === 'TRANSPORT' ? <Bus size={20}/> : <Info size={20}/>}
                                 </div>
-                                <div>
-                                    <p className="font-black text-[#4E342E]">{e.description}</p>
-                                    <p className="text-[10px] font-bold text-[#8DB359] uppercase">{e.paidBy} 畀咗</p>
-                                </div>
+                                <div><p className="font-black text-[#4E342E] text-sm">{e.description}</p><p className="text-[9px] font-bold text-[#8DB359] uppercase">{e.paidBy} 畀咗</p></div>
                             </div>
-                            <div className="flex items-center gap-4">
-                                <p className="text-xl font-black text-[#4E342E]">{e.amount} <span className="text-[10px]">TWD</span></p>
-                                <button onClick={() => deleteExpense(e.id)} className="p-2 text-[#D7CCC8] hover:text-rose-500"><Trash2 size={18}/></button>
+                            <div className="flex items-center gap-3"><p className="text-lg font-black text-[#4E342E] tabular-nums">{e.amount}</p><button onClick={() => deleteDoc(doc(db, "expenses", e.id))} className="p-2 text-[#D7CCC8] hover:text-rose-500"><Trash2 size={16}/></button></div>
+                        </div>
+                    ))}
+                </div>
+            </div>
+        ) : activeTab === TabType.PREP ? (
+            <div className="pb-8">
+                <div className="grid grid-cols-4 gap-2 mb-8 bg-[#E9F3E8] p-1.5 rounded-[30px]">
+                    {['TODO', 'LUGGAGE', 'WANT', 'BUY'].map(cat => (
+                        <button key={cat} onClick={() => setActivePrepCategory(cat as PrepCategory)} className={`py-3 rounded-[24px] text-[12px] font-black transition-all ${activePrepCategory === cat ? 'bg-[#8DB359] text-white shadow-md' : 'text-[#8DB359]/60'}`}>
+                            {cat === 'TODO' ? '待辦' : cat === 'LUGGAGE' ? '行李' : cat === 'WANT' ? '想去' : '採購'}
+                        </button>
+                    ))}
+                </div>
+                <div className="relative mb-8">
+                    <input type="text" value={newPrepItemName} onChange={e => setNewPrepItemName(e.target.value)} placeholder={`新增項目...`} className="w-full bg-white rounded-[35px] border-4 border-[#E8F1E7] px-8 py-6 shadow-sm font-black text-[#5E4E42] text-lg outline-none" />
+                    <button onClick={async () => {
+                        if (!newPrepItemName.trim()) return;
+                        const newId = `prep-${Date.now()}`;
+                        await setDoc(doc(db, "packingList", newId), { id: newId, name: newPrepItemName, completedBy: [], category: activePrepCategory });
+                        setNewPrepItemName('');
+                    }} className="absolute right-2 bottom-2 w-14 h-14 bg-[#8DB359] rounded-[24px] flex items-center justify-center text-white shadow-lg active:scale-90 transition-all"><Plus size={28} /></button>
+                </div>
+                <div className="space-y-4">
+                    {packingList.filter(i => i.category === activePrepCategory).map(item => (
+                        <div key={item.id} className="bg-white p-6 rounded-[35px] border-4 border-[#E8F1E7] shadow-sm">
+                            <div className="flex items-center justify-between mb-4"><span className="text-lg font-black text-[#5E4E42]">{item.name}</span><button onClick={() => deleteDoc(doc(db, "packingList", item.id))} className="text-[#D7CCC8] hover:text-rose-500"><Trash2 size={18} /></button></div>
+                            <div className="flex gap-2">
+                                {members.map(m => {
+                                    const isDone = (item.completedBy || []).includes(m.name);
+                                    return (
+                                        <button key={m.name} onClick={async () => {
+                                            let n = [...(item.completedBy || [])];
+                                            n = n.includes(m.name) ? n.filter(x => x !== m.name) : [...n, m.name];
+                                            await updateDoc(doc(db, "packingList", item.id), { completedBy: n });
+                                        }} className={`px-4 py-2 rounded-full text-[10px] font-black flex items-center gap-2 border-2 transition-all ${isDone ? 'bg-[#8DB359] border-[#8DB359] text-white shadow-sm' : 'bg-white border-[#E8F1E7] text-[#8DB359]'}`}>
+                                            <img src={m.avatar} className="w-4 h-4 rounded-full object-cover" /> {m.name} {isDone && '✓'}
+                                        </button>
+                                    );
+                                })}
                             </div>
                         </div>
                     ))}
-                    {expenses.length === 0 && <p className="text-center opacity-20 font-black italic py-10">暫時未有開支</p>}
                 </div>
             </div>
         ) : activeTab === TabType.MEMBERS ? (
@@ -339,7 +361,7 @@ const App: React.FC = () => {
                   <div className="w-32 h-32 rounded-full border-8 border-[#FDFBF3] overflow-hidden shadow-xl mb-6 ring-4 ring-[#E8F1E7]"><img src={member.avatar} className="w-full h-full object-cover" /></div>
                   <h3 className="text-2xl font-black text-[#4E342E] mb-1">{member.name}</h3>
                   <p className="text-[#8DB359] font-black uppercase text-xs tracking-widest mb-6">{member.role}</p>
-                  <button onClick={() => setCurrentMemberName(member.name)} className={`w-full py-4 rounded-[25px] font-black transition-all flex items-center justify-center gap-2 ${currentMemberName === member.name ? 'bg-[#8DB359] text-white' : 'bg-[#FDFBF3] text-[#8DB359] border-2 border-[#E8F1E7]'}`}>
+                  <button onClick={() => setCurrentMemberName(member.name)} className={`w-full py-4 rounded-[25px] font-black transition-all flex items-center justify-center gap-2 ${currentMemberName === member.name ? 'bg-[#8DB359] text-white shadow-md' : 'bg-[#FDFBF3] text-[#8DB359] border-2 border-[#E8F1E7]'}`}>
                     {currentMemberName === member.name ? <Star size={18} fill="currentColor" /> : <Heart size={18} />} {currentMemberName === member.name ? '已切換為此身分' : '切換為此身分'}
                   </button>
                 </div>
@@ -349,15 +371,17 @@ const App: React.FC = () => {
         ) : null}
       </main>
 
-      <nav className="fixed bottom-8 left-4 right-4 h-24 bg-white/95 backdrop-blur-md rounded-[40px] border-4 border-[#E8F1E7] shadow-xl z-50 flex items-center justify-around px-4">
+      {/* Optimized Navigation with Map included */}
+      <nav className="fixed bottom-8 left-4 right-4 h-24 bg-white/95 backdrop-blur-md rounded-[40px] border-4 border-[#E8F1E7] shadow-xl z-50 flex items-center justify-around px-2">
         {[
-          { type: TabType.ITINERARY, label: '行程', icon: <Calendar size={24}/> },
-          { type: TabType.LEDGER, label: '記帳', icon: <Wallet size={24}/> },
-          { type: TabType.PREP, label: '準備', icon: <CheckSquare size={24}/> },
-          { type: TabType.MEMBERS, label: '成員', icon: <Users size={24}/> }
+          { type: TabType.ITINERARY, label: '行程', icon: <Calendar size={20}/> },
+          { type: TabType.MAP, label: '地圖', icon: <MapIcon size={20}/> },
+          { type: TabType.LEDGER, label: '記帳', icon: <Wallet size={20}/> },
+          { type: TabType.PREP, label: '準備', icon: <CheckSquare size={20}/> },
+          { type: TabType.MEMBERS, label: '成員', icon: <Users size={20}/> }
         ].map(n => (
           <button key={n.label} onClick={() => setActiveTab(n.type as TabType)} className={`flex flex-col items-center gap-1 transition-all active:scale-90 ${activeTab === n.type ? 'text-[#8DB359] -translate-y-2' : 'text-[#D7CCC8]'}`}>
-            {n.icon} <span className="text-[10px] font-black">{n.label}</span>
+            {n.icon} <span className="text-[9px] font-black tracking-tight">{n.label}</span>
           </button>
         ))}
       </nav>

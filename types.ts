@@ -12,7 +12,7 @@ export type PrepCategory = 'TODO' | 'LUGGAGE' | 'WANT' | 'BUY';
 
 export interface ItineraryItem {
   id: string;
-  time: string;
+  time: string; // 離港時間 / 起飛時間
   type: 'FLIGHT' | 'TRANSPORT' | 'FOOD' | 'SIGHT' | 'HOTEL';
   title: string;
   subtitle?: string;
@@ -21,6 +21,10 @@ export interface ItineraryItem {
   day: number;
   notes?: string;
   photos?: string[];
+  // 航班專用欄位
+  arrivalTime?: string;
+  terminal?: string;
+  gate?: string;
 }
 
 export interface Expense {
@@ -35,7 +39,7 @@ export interface Expense {
 export interface PackingItem {
   id: string;
   name: string;
-  completedBy: string[]; // Store array of member names who completed this task
+  completedBy: string[];
   category: PrepCategory;
   assignedTo?: string;
 }

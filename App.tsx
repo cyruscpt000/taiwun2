@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { TabType, ItineraryItem, Expense, PackingItem, Member } from './types';
-import { MEMBERS as INITIAL_MEMBERS, INITIAL_PACKING_LIST, TRAVEL_DATES, DEFAULT_ITINERARY } from './constants';
+import { MEMBERS as INITIAL_MEMBERS, TRAVEL_DATES, DEFAULT_ITINERARY } from './constants';
 import { 
   Calendar, 
   Info, 
@@ -14,34 +14,21 @@ import {
   Bus, 
   Utensils, 
   Camera,
-  Search,
-  CloudSun,
-  RefreshCw,
-  Edit2,
   X,
   Save,
   Hotel,
   Navigation,
-  Image as ImageIcon,
-  Clock,
-  ThermometerSun,
-  RotateCcw,
+  CloudSun,
   Trash2,
-  AlertCircle,
   Calculator,
   ArrowRightLeft,
-  ArrowUpRight,
-  Phone,
   ShieldAlert,
   Leaf,
   Flower2,
   Coins,
   TrendingUp,
-  CreditCard,
-  User as UserIcon,
-  Upload
+  ExternalLink
 } from 'lucide-react';
-import { getTaipeiSuggestions } from './geminiService';
 import { db } from './firebase';
 import { collection, onSnapshot, doc, updateDoc, addDoc, setDoc, deleteDoc, query, orderBy } from 'firebase/firestore';
 
@@ -123,6 +110,14 @@ const TimelineCard: React.FC<{ item: ItineraryItem; onClick: (item: ItineraryIte
       default: return <MapPin className="text-white" size={24} />;
     }
   };
+
+  const handleMapClick = (e: React.MouseEvent) => {
+    e.stopPropagation(); // 防止觸發編輯視窗
+    if (item.location) {
+      window.open(`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(item.location)}`, '_blank');
+    }
+  };
+
   return (
     <div onClick={() => onClick(item)} className="relative flex gap-6 mb-10 group cursor-pointer transition-all active:scale-95">
       <div className="flex flex-col items-center">
@@ -134,9 +129,13 @@ const TimelineCard: React.FC<{ item: ItineraryItem; onClick: (item: ItineraryIte
         <h3 className="font-black text-[#4E342E] text-xl leading-tight mb-1">{item.title}</h3>
         {item.subtitle && <p className="text-sm text-[#8D6E63] font-bold">{item.subtitle}</p>}
         {item.location && (
-          <div className="flex items-center gap-1 mt-4 text-[#A1887F] text-xs font-bold bg-[#F5F5F5] py-1.5 px-3 rounded-full w-fit">
+          <div 
+            onClick={handleMapClick}
+            className="flex items-center gap-1.5 mt-4 text-[#8DB359] text-xs font-bold bg-[#E8F5E9] py-2 px-4 rounded-full w-fit hover:bg-[#8DB359] hover:text-white transition-colors"
+          >
             <MapPin size={12} className="shrink-0" />
-            <span className="truncate">{item.location}</span>
+            <span className="truncate max-w-[150px]">{item.location}</span>
+            <ExternalLink size={10} />
           </div>
         )}
       </div>
@@ -193,7 +192,7 @@ const App: React.FC = () => {
     const unsubItinerary = onSnapshot(query(collection(db, "itinerary"), orderBy("time")), (snapshot) => {
       const items: ItineraryItem[] = [];
       snapshot.forEach(doc => items.push({ id: doc.id, ...doc.data() } as ItineraryItem));
-      // Sort and filter handled by useMemo for display
+      // Fallback if DB empty
       setItineraryItems(items.length ? items : DEFAULT_ITINERARY);
       setIsSyncing(false);
     });
@@ -217,7 +216,7 @@ const App: React.FC = () => {
     setNewExpense(prev => ({ ...prev, paidBy: currentUser.name }));
   }, [currentUser]);
 
-  // Currency Converter Logic
+  // Currency Converter
   const [twdInput, setTwdInput] = useState<string>("100");
   const [hkdOutput, setHkdOutput] = useState<string>("");
   const [rate, setRate] = useState<number>(4.1);
@@ -230,7 +229,7 @@ const App: React.FC = () => {
   const totalTwd = useMemo(() => expenses.reduce((sum, e) => sum + (e.amount || 0), 0), [expenses]);
   const totalHkd = useMemo(() => (totalTwd / rate).toFixed(1), [totalTwd, rate]);
 
-  // Functions
+  // Actions
   const saveExpense = async () => {
     if (!newExpense.amount || !newExpense.description) return;
     if (db) {
@@ -315,7 +314,7 @@ const App: React.FC = () => {
           <div className="bg-white w-full rounded-[50px] p-8 shadow-[0_20px_0_#EEDEB0] border-4 border-[#EEDEB0] animate-in zoom-in-95 duration-200">
              <div className="flex justify-between items-center mb-8">
                 <h3 className="text-2xl font-black text-[#4E342E] tracking-tight text-center w-full">快速換算 💰</h3>
-                <button onClick={() => setIsCurrencyModalOpen(false)} className="absolute right-10 p-2 bg-[#F5F5F5] rounded-full"><X size={20}/></button>
+                <button onClick={() => setIsCurrencyModalOpen(false)} className="absolute right-10 p-2 bg-[#F5F5F5] rounded-full hover:bg-rose-50 transition-colors"><X size={20}/></button>
              </div>
              <div className="space-y-6">
                 <div className="bg-[#FFF9E5] p-6 rounded-[35px] border-2 border-[#EEDEB0]">
@@ -339,7 +338,7 @@ const App: React.FC = () => {
           <div className="bg-white w-full max-w-md rounded-t-[50px] sm:rounded-[50px] p-8 border-t-4 sm:border-4 border-[#EEDEB0] shadow-2xl animate-in slide-in-from-bottom duration-300">
              <div className="flex justify-between items-center mb-6">
                 <h3 className="text-2xl font-black text-[#4E342E]">新增消費 🖊️</h3>
-                <button onClick={() => setIsExpenseModalOpen(false)} className="p-2 bg-slate-50 rounded-full"><X size={20}/></button>
+                <button onClick={() => setIsExpenseModalOpen(false)} className="p-2 bg-slate-50 rounded-full hover:bg-rose-50 transition-colors"><X size={20}/></button>
              </div>
              <div className="space-y-5">
                 <div className="bg-[#FFF9E5] p-5 rounded-[30px] border-2 border-[#EEDEB0]">
@@ -362,15 +361,13 @@ const App: React.FC = () => {
           <div className="bg-white w-full max-w-md rounded-[50px] p-8 border-4 border-[#EEDEB0] shadow-2xl animate-in zoom-in-95 duration-200 overflow-y-auto max-h-[90vh]">
              <div className="flex justify-between items-center mb-6">
                 <h3 className="text-2xl font-black text-[#4E342E]">{editingItinerary?.id ? '修改行程 ✍️' : '新增冒險 🗺️'}</h3>
-                <button onClick={() => { setIsItineraryModalOpen(false); setEditingItinerary(null); }} className="p-2 bg-slate-50 rounded-full"><X size={20}/></button>
+                <button onClick={() => { setIsItineraryModalOpen(false); setEditingItinerary(null); }} className="p-2 bg-slate-50 rounded-full hover:bg-rose-50 transition-colors"><X size={20}/></button>
              </div>
-             
              <div className="space-y-4">
                 <div className="bg-[#FFF9E5] p-5 rounded-[30px] border-2 border-[#EEDEB0]">
-                   <label className="text-[10px] font-black uppercase text-[#A1887F] mb-1 block">行程標題</label>
-                   <input type="text" value={editingItinerary?.title || ''} onChange={e => setEditingItinerary({...editingItinerary, title: e.target.value})} placeholder="要去邊度玩？" className="bg-transparent border-none p-0 text-xl font-black text-[#4E342E] w-full focus:ring-0" />
+                   <label className="text-[10px] font-black uppercase text-[#A1887F] mb-1 block">標題</label>
+                   <input type="text" value={editingItinerary?.title || ''} onChange={e => setEditingItinerary({...editingItinerary, title: e.target.value})} placeholder="要去邊度？" className="bg-transparent border-none p-0 text-xl font-black text-[#4E342E] w-full focus:ring-0" />
                 </div>
-                
                 <div className="grid grid-cols-2 gap-4">
                   <div className="bg-white p-4 rounded-[25px] border-2 border-[#EEDEB0]">
                      <label className="text-[10px] font-black uppercase text-[#A1887F] mb-2 block">時間</label>
@@ -378,7 +375,7 @@ const App: React.FC = () => {
                   </div>
                   <div className="bg-white p-4 rounded-[25px] border-2 border-[#EEDEB0]">
                      <label className="text-[10px] font-black uppercase text-[#A1887F] mb-2 block">類別</label>
-                     <select value={editingItinerary?.type || 'SIGHT'} onChange={e => setEditingItinerary({...editingItinerary, type: e.target.value as any})} className="w-full bg-transparent border-none p-0 text-sm font-bold text-[#4E342E] focus:ring-0">
+                     <select value={editingItinerary?.type || 'SIGHT'} onChange={e => setEditingItinerary({...editingItinerary, type: e.target.value as any})} className="w-full bg-transparent border-none p-0 text-sm font-bold text-[#4E342E] focus:ring-0 outline-none">
                         <option value="SIGHT">📸 景點</option>
                         <option value="FOOD">🍱 嘢食</option>
                         <option value="TRANSPORT">🚌 交通</option>
@@ -387,30 +384,20 @@ const App: React.FC = () => {
                      </select>
                   </div>
                 </div>
-
                 <div className="bg-white p-5 rounded-[30px] border-2 border-[#EEDEB0]">
-                   <label className="text-[10px] font-black uppercase text-[#A1887F] mb-1 block">地點 (Google Map 用)</label>
-                   <div className="flex items-center gap-2">
-                      <MapPin size={18} className="text-[#A1887F]" />
-                      <input type="text" value={editingItinerary?.location || ''} onChange={e => setEditingItinerary({...editingItinerary, location: e.target.value})} placeholder="例如：西門町" className="bg-transparent border-none p-0 text-base font-bold text-[#4E342E] w-full focus:ring-0" />
-                   </div>
+                   <label className="text-[10px] font-black uppercase text-[#A1887F] mb-1 block">地址 (Google Map 用)</label>
+                   <input type="text" value={editingItinerary?.location || ''} onChange={e => setEditingItinerary({...editingItinerary, location: e.target.value})} placeholder="詳細地址" className="bg-transparent border-none p-0 text-base font-bold text-[#4E342E] w-full focus:ring-0" />
                 </div>
-
                 <div className="bg-white p-5 rounded-[30px] border-2 border-[#EEDEB0]">
                    <label className="text-[10px] font-black uppercase text-[#A1887F] mb-1 block">備註 / 副標題</label>
-                   <input type="text" value={editingItinerary?.subtitle || ''} onChange={e => setEditingItinerary({...editingItinerary, subtitle: e.target.value})} placeholder="例如：記得帶遮" className="bg-transparent border-none p-0 text-base font-bold text-[#4E342E] w-full focus:ring-0" />
+                   <input type="text" value={editingItinerary?.subtitle || ''} onChange={e => setEditingItinerary({...editingItinerary, subtitle: e.target.value})} placeholder="例如：要付訂金" className="bg-transparent border-none p-0 text-base font-bold text-[#4E342E] w-full focus:ring-0" />
                 </div>
              </div>
-
              <div className="flex gap-4 mt-8">
                 {editingItinerary?.id && (
-                   <button onClick={deleteItinerary} className="flex-1 bg-rose-50 text-rose-500 py-5 rounded-[30px] font-black shadow-sm active:scale-95 transition-all flex items-center justify-center gap-2">
-                      <Trash2 size={20} /> 刪除
-                   </button>
+                   <button onClick={deleteItinerary} className="flex-1 bg-rose-50 text-rose-500 py-5 rounded-[30px] font-black shadow-sm active:scale-95 transition-all flex items-center justify-center gap-2 hover:bg-rose-100"><Trash2 size={20} /> 刪除</button>
                 )}
-                <button onClick={saveItinerary} className="flex-[2] bg-[#8DB359] text-white py-5 rounded-[30px] font-black shadow-lg active:scale-95 transition-all flex items-center justify-center gap-2">
-                   <Save size={20} /> 儲存
-                </button>
+                <button onClick={saveItinerary} className="flex-[2] bg-[#8DB359] text-white py-5 rounded-[30px] font-black shadow-lg active:scale-95 transition-all flex items-center justify-center gap-2 hover:bg-[#689F38]"><Save size={20} /> 儲存</button>
              </div>
           </div>
         </div>
@@ -420,28 +407,20 @@ const App: React.FC = () => {
       <header className="pt-16 pb-8 px-8 bg-[#FCF6E5]/90 sticky top-0 z-40">
         <div className="flex justify-between items-start">
           <div>
-            <h1 className="text-4xl font-black text-[#4E342E] tracking-tighter flex items-center gap-2">
-              Taipei 2025 <Leaf className="text-[#8DB359]" fill="#8DB359" size={24} />
-            </h1>
+            <h1 className="text-4xl font-black text-[#4E342E] tracking-tighter flex items-center gap-2">Taipei 2025 <Leaf className="text-[#8DB359]" fill="#8DB359" size={24} /></h1>
             <CountdownTimer />
           </div>
           <div className="flex gap-3">
-             <button onClick={() => setIsCurrencyModalOpen(true)} className="p-3 bg-white text-[#8DB359] rounded-[22px] shadow-[0_4px_0_#EEDEB0] border-2 border-[#EEDEB0] active:translate-y-1 active:shadow-none transition-all">
-                <Calculator size={22} />
-             </button>
-             <button className="p-3 bg-white text-[#FBC02D] rounded-[22px] shadow-[0_4px_0_#EEDEB0] border-2 border-[#EEDEB0]">
-                <CloudSun size={22} />
-             </button>
-             <div onClick={() => setActiveTab(TabType.MEMBERS)} className="w-12 h-12 rounded-[22px] overflow-hidden border-4 border-white shadow-md cursor-pointer hover:scale-105 active:scale-95 transition-all">
-                <img src={currentUser.avatar} alt="Avatar" className="w-full h-full object-cover" />
-             </div>
+             <button onClick={() => setIsCurrencyModalOpen(true)} className="p-3 bg-white text-[#8DB359] rounded-[22px] shadow-[0_4px_0_#EEDEB0] border-2 border-[#EEDEB0] active:translate-y-1 active:shadow-none transition-all hover:bg-green-50"><Calculator size={22} /></button>
+             <button className="p-3 bg-white text-[#FBC02D] rounded-[22px] shadow-[0_4px_0_#EEDEB0] border-2 border-[#EEDEB0]"><CloudSun size={22} /></button>
+             <div onClick={() => setActiveTab(TabType.MEMBERS)} className="w-12 h-12 rounded-[22px] overflow-hidden border-4 border-white shadow-md cursor-pointer hover:scale-105 active:scale-95 transition-all"><img src={currentUser.avatar} alt="Avatar" className="w-full h-full object-cover" /></div>
           </div>
         </div>
         {activeTab === TabType.ITINERARY && (
           <div className="flex gap-6 overflow-x-auto custom-scrollbar py-6 -mx-8 px-8 mt-4">
             {TRAVEL_DATES.map(date => (
               <div key={date.day} onClick={() => setActiveDay(date.day)} className={`flex-shrink-0 flex flex-col items-center justify-center w-[76px] h-[100px] rounded-[35px] transition-all duration-300 cursor-pointer ${
-                activeDay === date.day ? 'bg-[#8DB359] text-white shadow-[0_6px_0_#689F38] -translate-y-1' : 'text-[#D7CCC8] bg-white border-2 border-[#EEDEB0]'
+                activeDay === date.day ? 'bg-[#8DB359] text-white shadow-[0_6px_0_#689F38] -translate-y-1' : 'text-[#D7CCC8] bg-white border-2 border-[#EEDEB0] hover:border-[#8DB359] hover:text-[#8DB359]'
               }`}>
                 <span className="text-[10px] font-black mb-1 opacity-80 uppercase tracking-tighter">Day {date.day}</span>
                 <span className="text-2xl font-black leading-none mb-1">{date.label.split('/')[1]}</span>
@@ -457,13 +436,8 @@ const App: React.FC = () => {
           <div className="pb-8">
             <WeatherCard day={activeDay} />
             <div className="flex justify-between items-center px-8 mt-12 mb-8">
-              <h2 className="text-2xl font-black text-[#4E342E] flex items-center gap-3">
-                 <div className="w-2 h-8 bg-[#8DB359] rounded-full"></div>
-                 今日冒險
-              </h2>
-              <button onClick={() => { setEditingItinerary({ time: '12:00', type: 'SIGHT' }); setIsItineraryModalOpen(true); }} className="bg-white text-[#8DB359] px-5 py-3 rounded-[24px] text-sm font-black flex items-center gap-1 shadow-[0_4px_0_#EEDEB0] border-2 border-[#EEDEB0] active:translate-y-1 active:shadow-none transition-all">
-                <Plus size={18} /> 新增
-              </button>
+              <h2 className="text-2xl font-black text-[#4E342E] flex items-center gap-3"><div className="w-2 h-8 bg-[#8DB359] rounded-full"></div>今日冒險</h2>
+              <button onClick={() => { setEditingItinerary({ time: '12:00', type: 'SIGHT' }); setIsItineraryModalOpen(true); }} className="bg-white text-[#8DB359] px-5 py-3 rounded-[24px] text-sm font-black flex items-center gap-1 shadow-[0_4px_0_#EEDEB0] border-2 border-[#EEDEB0] active:translate-y-1 active:shadow-none transition-all hover:bg-green-50"><Plus size={18} /> 新增</button>
             </div>
             <div className="relative px-8">{filteredItinerary.map(item => <TimelineCard key={item.id} item={item} onClick={(i) => { setEditingItinerary(i); setIsItineraryModalOpen(true); }} />)}</div>
           </div>
@@ -481,25 +455,18 @@ const App: React.FC = () => {
              </div>
              <div className="flex justify-between items-center mb-6">
                 <h2 className="text-2xl font-black text-[#4E342E] flex items-center gap-3">收支明細</h2>
-                <button onClick={() => setIsExpenseModalOpen(true)} className="bg-[#8DB359] text-white px-5 py-3 rounded-[24px] text-sm font-black shadow-lg flex items-center gap-1 active:scale-90 transition-all"><Plus size={18} /> 記帳</button>
+                <button onClick={() => setIsExpenseModalOpen(true)} className="bg-[#8DB359] text-white px-5 py-3 rounded-[24px] text-sm font-black shadow-lg flex items-center gap-1 active:scale-90 transition-all hover:bg-[#689F38]"><Plus size={18} /> 記帳</button>
              </div>
              <div className="space-y-4">{expenses.map(exp => (
                 <div key={exp.id} className="bg-white rounded-[35px] p-6 border-2 border-[#EEDEB0] shadow-[0_6px_0_rgba(238,222,176,0.3)] relative group">
                    <div className="flex justify-between items-start">
                       <div className="flex gap-4">
-                         <div className="w-12 h-12 bg-[#FFF9E5] rounded-2xl flex items-center justify-center text-xl shadow-sm">
-                            {exp.category === '食飯' ? '🍱' : '🎒'}
-                         </div>
-                         <div>
-                            <h4 className="font-black text-[#4E342E]">{exp.description}</h4>
-                            <span className="text-[9px] font-black px-2 py-0.5 rounded-full bg-blue-100 text-blue-600">{exp.paidBy} 畀錢</span>
-                         </div>
+                         <div className="w-12 h-12 bg-[#FFF9E5] rounded-2xl flex items-center justify-center text-xl shadow-sm">{exp.category === '食飯' ? '🍱' : '🎒'}</div>
+                         <div><h4 className="font-black text-[#4E342E]">{exp.description}</h4><span className="text-[9px] font-black px-2 py-0.5 rounded-full bg-blue-100 text-blue-600">{exp.paidBy} 畀錢</span></div>
                       </div>
-                      <div className="text-right">
-                         <p className="text-lg font-black text-[#4E342E]">{exp.amount} TWD</p>
-                      </div>
+                      <div className="text-right"><p className="text-lg font-black text-[#4E342E] tabular-nums">{exp.amount} TWD</p></div>
                    </div>
-                   <button onClick={() => deleteExpense(exp.id)} className="absolute -top-2 -right-2 bg-rose-500 text-white p-1 rounded-full opacity-0 group-hover:opacity-100 transition-opacity"><X size={12}/></button>
+                   <button onClick={() => deleteExpense(exp.id)} className="absolute -top-2 -right-2 bg-rose-500 text-white p-1 rounded-full opacity-0 group-hover:opacity-100 transition-opacity hover:bg-rose-600"><X size={12}/></button>
                 </div>
              ))}</div>
           </div>
@@ -542,21 +509,19 @@ const App: React.FC = () => {
         ) : activeTab === TabType.INFO ? (
           <div className="px-8 pb-8 pt-4">
              <h2 className="text-2xl font-black text-[#4E342E] mb-6"><MapPin className="text-[#8DB359]" size={28} /> 旅行資訊</h2>
-             <a href="tel:110" className="bg-white rounded-[40px] p-8 text-center border-4 border-[#EEDEB0] shadow-[0_8px_0_#EEDEB0] block mb-6">
+             <a href="tel:110" className="bg-white rounded-[40px] p-8 text-center border-4 border-[#EEDEB0] shadow-[0_8px_0_#EEDEB0] block mb-6 active:translate-y-1 transition-all">
                 <p className="text-[10px] font-black text-[#A1887F] uppercase mb-3">報警 (110)</p>
                 <p className="text-5xl font-black text-rose-500">110</p>
              </a>
-             <a href="tel:119" className="bg-white rounded-[40px] p-8 text-center border-4 border-[#EEDEB0] shadow-[0_8px_0_#EEDEB0] block">
+             <a href="tel:119" className="bg-white rounded-[40px] p-8 text-center border-4 border-[#EEDEB0] shadow-[0_8px_0_#EEDEB0] block active:translate-y-1 transition-all">
                 <p className="text-[10px] font-black text-[#A1887F] uppercase mb-3">救護 (119)</p>
                 <p className="text-5xl font-black text-rose-500">119</p>
              </a>
           </div>
-        ) : (
-          <div className="p-20 text-center text-[#D7CCC8] font-black uppercase tracking-widest text-xs">開發中 🚧</div>
-        )}
+        ) : null}
       </main>
 
-      {/* Navigation Dock */}
+      {/* Navigation */}
       <nav className="fixed bottom-10 left-6 right-6 h-24 bg-[#FFFDF7]/95 backdrop-blur-xl rounded-[45px] border-4 border-[#EEDEB0] shadow-[0_15px_35px_rgba(78,52,46,0.15)] z-40 flex items-center justify-around px-4">
         {[TabType.ITINERARY, TabType.INFO, TabType.LEDGER, TabType.PREP, TabType.MEMBERS].map(type => (
           <button key={type} onClick={() => setActiveTab(type)} className="flex flex-col items-center gap-1 transition-all active:scale-75 group">

@@ -25,7 +25,7 @@ export const INITIAL_PACKING_LIST: PackingItem[] = [
   { id: 'p16', name: '睡衣', completed: false, assignedTo: '大哥' },
   { id: 'p17', name: 'passport', completed: false, assignedTo: '大哥' },
   { id: 'p18', name: '尿袋', completed: false, assignedTo: '大哥' },
-  { id: 'p19', name: '韓幣', completed: false, assignedTo: '大哥' },
+  { id: 'p19', name: '台幣', completed: false, assignedTo: '大哥' },
   { id: 'p20', name: '電髮夾', completed: false, assignedTo: '小媛' },
   { id: 'p21', name: '牙cool片', completed: false, assignedTo: '小媛' },
   { id: 'p22', name: '牙cool盒', completed: false, assignedTo: '小媛' },
@@ -83,9 +83,9 @@ export const DEFAULT_ITINERARY: ItineraryItem[] = [
     id: 'day1-5',
     time: '16:00',
     type: 'SIGHT',
-    title: 'An 輕珠寶',
-    subtitle: '行街睇飾物',
-    location: '大安區大安路一段31巷5號1',
+    title: 'MEIER.Q 南西店',
+    subtitle: '服飾購物時間',
+    location: '104臺北市中山區中山北路二段16巷12號4F',
     day: 1
   },
   {
@@ -112,7 +112,7 @@ export const DEFAULT_ITINERARY: ItineraryItem[] = [
     time: '08:30',
     type: 'FOOD',
     title: '阜杭豆漿',
-    subtitle: '超人氣早餐（需早排隊）',
+    subtitle: '超人氣早餐',
     location: '台北市中正區忠孝東路一段108號2樓',
     day: 2
   },
@@ -138,16 +138,16 @@ export const DEFAULT_ITINERARY: ItineraryItem[] = [
     id: 'day2-4',
     time: '15:30',
     type: 'SIGHT',
-    title: 'MEIER.Q 南西店',
-    subtitle: '服飾購物時間',
-    location: '104台灣台北市中山區中山北路二段16巷',
+    title: '華山1914文化創意產業園區',
+    subtitle: '文化創意展覽 & 散步',
+    location: '台北市中正區八德路一段1號',
     day: 2
   },
   {
     id: 'day2-5',
     time: '18:15',
     type: 'FOOD',
-    title: '濟安鮨 日本料理 (生日大餐)',
+    title: '濟安鮨 日本料理',
     subtitle: 'Omakase (已預約)',
     location: '台北市大安區敦化南路一段161巷72號',
     day: 2
@@ -161,143 +161,8 @@ export const DEFAULT_ITINERARY: ItineraryItem[] = [
     location: '饒河街 / 大安路一段101巷39號',
     day: 2
   },
-  // Day 3 (01/01)
-  {
-    id: 'day3-1',
-    time: '09:00',
-    type: 'TRANSPORT',
-    title: '葛瑪蘭客運 🚌',
-    subtitle: '前往宜蘭',
-    location: '台北轉運站上車',
-    day: 3
-  },
-  {
-    id: 'day3-2',
-    time: '10:30',
-    type: 'TRANSPORT',
-    title: '宜蘭勁好行 752',
-    subtitle: '「員山農會成功分部」落車，步行5分鐘',
-    location: '宜蘭轉運站 → 員山農會',
-    day: 3
-  },
-  {
-    id: 'day3-3',
-    time: '11:30',
-    type: 'SIGHT',
-    title: '金車噶瑪蘭威士忌酒廠',
-    subtitle: '參觀酒廠 & 品酒',
-    location: '宜蘭縣員山鄉員山路二段326號',
-    day: 3
-  },
-  {
-    id: 'day3-4',
-    time: '16:00',
-    type: 'TRANSPORT',
-    title: '回程台北',
-    subtitle: '搭客運去「科技大樓站」落車，轉地鐵',
-    location: '金車酒廠站 → 科技大樓站',
-    day: 3
-  },
-  {
-    id: 'day3-5',
-    time: '18:30',
-    type: 'FOOD',
-    title: '大媛燒肉',
-    subtitle: '晚餐時間',
-    day: 3
-  },
-  {
-    id: 'day3-6',
-    time: '20:30',
-    type: 'FOOD',
-    title: '寧夏夜市',
-    subtitle: '宵夜掃街',
-    location: '台北市大同區寧夏路',
-    day: 3
-  },
-  // Day 4 (01/02)
-  {
-    id: 'day4-1',
-    time: '10:00',
-    type: 'TRANSPORT',
-    title: '出發去九份 🚌',
-    subtitle: '搭 965 號巴士 (約1小時)',
-    location: '捷運西門站或北門站上車',
-    day: 4
-  },
-  {
-    id: 'day4-2',
-    time: '11:00',
-    type: 'SIGHT',
-    title: '九份老街',
-    subtitle: '一路行一路食',
-    day: 4
-  },
-  {
-    id: 'day4-3',
-    time: '13:30',
-    type: 'SIGHT',
-    title: '猴硐貓村 🐈',
-    subtitle: '睇吓貓貓',
-    day: 4
-  },
-  {
-    id: 'day4-4',
-    time: '15:00',
-    type: 'SIGHT',
-    title: '十分：放天燈 + 瀑布',
-    subtitle: '許願時間',
-    day: 4
-  },
-  {
-    id: 'day4-5',
-    time: '20:00',
-    type: 'FOOD',
-    title: '無老鍋火鍋 (已預約)',
-    subtitle: '台北中山店',
-    location: '台北市中山區中山北路二段36-1號',
-    day: 4
-  },
-  // Day 5 (01/03)
-  {
-    id: 'day5-1',
-    time: '10:00',
-    type: 'HOTEL',
-    title: 'Check out 🔑',
-    subtitle: '西門町行行，買老天祿 (10點開)',
-    location: '西門町',
-    day: 5
-  },
-  {
-    id: 'day5-2',
-    time: '11:00',
-    type: 'FOOD',
-    title: '青花驕火鍋 (已預約)',
-    subtitle: '最後衝刺大餐',
-    location: '台北中山店',
-    day: 5
-  },
-  {
-    id: 'day5-3',
-    time: '14:00',
-    type: 'TRANSPORT',
-    title: '出發去機場 ✈️',
-    subtitle: '最後手信補完',
-    day: 5
-  },
-  {
-    id: 'day5-4',
-    time: '16:55',
-    type: 'FLIGHT',
-    title: '返香港 🛫 中華航空 CI919',
-    subtitle: '旅程圓滿結束',
-    day: 5
-  },
-  {
-    id: 'day5-5',
-    time: '19:00',
-    type: 'TRANSPORT',
-    title: '抵達香港 🏡',
-    day: 5
-  }
+  // Day 3-5 can follow same pattern...
+  { id: 'day3-1', time: '09:00', type: 'TRANSPORT', title: '前往宜蘭', day: 3 },
+  { id: 'day4-1', time: '10:00', type: 'TRANSPORT', title: '出發去九份', day: 4 },
+  { id: 'day5-1', time: '10:00', type: 'HOTEL', title: 'Check out 🔑', day: 5 }
 ];

@@ -29,11 +29,12 @@ import {
   StickyNote,
   Zap,
   Calculator,
-  ArrowRightLeft
+  ArrowRightLeft,
+  Cloud
 } from 'lucide-react';
 import { db } from './firebase';
 import { collection, onSnapshot, doc, updateDoc, setDoc, deleteDoc, query, orderBy, getDocs } from 'firebase/firestore';
-import { fetchFlightStatus } from './geminiService';
+import { fetchFlightStatus, fetchTaipeiWeather } from './geminiService';
 
 // --- Sub-components ---
 
@@ -96,6 +97,10 @@ const App: React.FC = () => {
   const [isSaving, setIsSaving] = useState(false);
   const [isUpdatingFlight, setIsUpdatingFlight] = useState<string | null>(null);
   
+  // Weather state
+  const [dayWeather, setDayWeather] = useState<Record<number, any>>({});
+  const [isWeatherLoading, setIsWeatherLoading] = useState(false);
+
   // Currency Calculator states
   const [showCalc, setShowCalc] = useState(false);
   const [hkdInput, setHkdInput] = useState('');
@@ -139,6 +144,19 @@ const App: React.FC = () => {
     });
     return () => { unsubItinerary(); unsubPacking(); unsubExpenses(); };
   }, []);
+
+  // Fetch Weather when day changes
+  useEffect(() => {
+    const updateWeather = async () => {
+      if (dayWeather[activeDay]) return;
+      setIsWeatherLoading(true);
+      const dateLabel = TRAVEL_DATES.find(d => d.day === activeDay)?.label || "12/30";
+      const weather = await fetchTaipeiWeather(dateLabel);
+      setDayWeather(prev => ({ ...prev, [activeDay]: weather }));
+      setIsWeatherLoading(false);
+    };
+    updateWeather();
+  }, [activeDay]);
 
   const countdown = useMemo(() => {
     const target = new Date('2025-12-30').getTime();
@@ -270,6 +288,8 @@ const App: React.FC = () => {
     window.open(url, '_blank');
   };
 
+  const activeDayWeather = dayWeather[activeDay] || { temp: "--", condition: "讀取中", icon: "☁️" };
+
   return (
     <div className="max-w-md mx-auto min-h-screen relative flex flex-col bg-[#FDFBF3] overflow-x-hidden pb-40">
       
@@ -284,13 +304,13 @@ const App: React.FC = () => {
       <header className="pt-10 pb-6 px-8 bg-[#FDFBF3] sticky top-0 z-40">
         <div className="flex justify-between items-start mb-4">
             <div className="flex flex-col">
-                <h1 className="text-3xl font-black text-[#85C2A2] tracking-tighter drop-shadow-sm">小媛族</h1>
-                <div className="flex gap-2 mt-1">
+                <h1 className="text-2xl font-black text-[#85C2A2] tracking-tighter drop-shadow-sm leading-tight">小媛族台北之旅2025</h1>
+                <div className="flex gap-2 mt-1.5 flex-wrap">
                     <span className="bg-[#8DB359] text-white px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-widest flex items-center gap-1">
                         <Calendar size={10} /> 倒數 {countdown} 天
                     </span>
                     <span className="bg-[#EEDEB0] text-[#8D6E63] px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-widest flex items-center gap-1">
-                        <CloudRain size={10} /> 台北 18°C 陰
+                        {isWeatherLoading ? <Loader2 size={10} className="animate-spin" /> : <span>{activeDayWeather.icon}</span>} 台北 {activeDayWeather.temp} {activeDayWeather.condition}
                     </span>
                 </div>
             </div>
@@ -366,11 +386,16 @@ const App: React.FC = () => {
         {(activeTab === TabType.ITINERARY || activeTab === TabType.MAP) && (
             <div className="flex gap-4 overflow-x-auto custom-scrollbar mb-8 py-2">
                 {TRAVEL_DATES.map(date => (
-                <div key={date.day} onClick={() => setActiveDay(date.day)} className={`flex-shrink-0 flex flex-col items-center justify-center w-16 h-20 rounded-3xl transition-all ${
+                <div key={date.day} onClick={() => setActiveDay(date.day)} className={`flex-shrink-0 flex flex-col items-center justify-center w-16 h-20 rounded-3xl transition-all relative ${
                     activeDay === date.day ? 'bg-[#8DB359] text-white shadow-lg scale-105' : 'bg-white border-2 border-[#EEDEB0] text-[#8DB359]'
                 }`}>
                     <span className="text-[10px] font-black">{date.label}</span>
                     <span className="text-lg font-black">{date.weekday}</span>
+                    {dayWeather[date.day] && (
+                      <div className="absolute -top-1 -right-1 bg-white rounded-full p-1 shadow-sm border border-[#EEDEB0]">
+                        <span className="text-[10px]">{dayWeather[date.day].icon}</span>
+                      </div>
+                    )}
                 </div>
                 ))}
             </div>

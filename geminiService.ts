@@ -40,3 +40,26 @@ export const fetchFlightStatus = async (flightNumber: string, date: string) => {
     return "Error fetching flight data";
   }
 };
+
+export const fetchTaipeiWeather = async (date: string) => {
+  try {
+    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+    const prompt = `What is the weather forecast for Taipei on ${date}, 2025? 
+    If it's too far in the future, provide the typical climate/average temperature and conditions for late December/early January in Taipei.
+    Format the response as JSON: {"temp": "15-20°C", "condition": "Cloudy", "icon": "☁️"}`;
+
+    const response = await ai.models.generateContent({
+      model: 'gemini-3-flash-preview',
+      contents: prompt,
+      config: {
+        responseMimeType: "application/json",
+        tools: [{ googleSearch: {} }]
+      }
+    });
+
+    return JSON.parse(response.text || "{}");
+  } catch (error) {
+    console.error("Weather Error:", error);
+    return { temp: "18°C", condition: "陰", icon: "☁️" };
+  }
+};

@@ -14,55 +14,22 @@ export const INITIAL_PACKING_LIST: PackingItem[] = [
   { id: '5', name: '常備藥品', completed: false, assignedTo: '大哥' }
 ];
 
-export const MOCK_ITINERARY: Record<number, ItineraryItem[]> = {
-  1: [
-    {
-      id: 'f1',
-      time: '09:20',
-      type: 'FLIGHT',
-      title: 'HKG T1 ✈ TPE T1',
-      subtitle: '國泰航空 CX494',
-      details: ['座位: 42A, 42B', '行李: 23kg x 2'],
-    },
-    {
-      id: 't1',
-      time: '12:30',
-      type: 'TRANSPORT',
-      title: '國光客運 1819',
-      subtitle: '桃園機場 -> 台北車站',
-      details: ['車程約 55 分鐘'],
-    },
-    {
-      id: 's1',
-      time: '15:30',
-      type: 'SIGHT',
-      title: '西門町 漫步',
-      subtitle: 'Check-in 後自由活動',
-      location: '萬華區'
-    },
-    {
-      id: 'food1',
-      time: '18:30',
-      type: 'FOOD',
-      title: '阿宗麵線',
-      subtitle: '必食老店',
-    }
-  ],
-  2: [
-    {
-      id: 's2',
-      time: '10:00',
-      type: 'SIGHT',
-      title: '台北 101',
-      subtitle: '觀景台拍美照',
-      location: '信義區'
-    },
-    {
-      id: 'food2',
-      time: '13:00',
-      type: 'FOOD',
-      title: '鼎泰豐 (信義店)',
-      subtitle: '記得提早攞籌',
-    }
-  ]
-};
+// 計算日期標籤
+export const TRAVEL_DATES = [
+  { day: 1, label: '12/30', weekday: '一' },
+  { day: 2, label: '12/31', weekday: '二' },
+  { day: 3, label: '01/01', weekday: '三' },
+  { day: 4, label: '01/02', weekday: '四' },
+  { day: 5, label: '01/03', weekday: '五' }
+];
+
+export const DEFAULT_ITINERARY: ItineraryItem[] = [
+  {
+    id: 'init-1',
+    time: '11:00',
+    type: 'FLIGHT',
+    title: '到達桃園機場',
+    subtitle: '國泰航空',
+    day: 1
+  }
+];

@@ -15,6 +15,7 @@ export interface ItineraryItem {
   subtitle?: string;
   details?: string[];
   location?: string;
+  day: number; // 歸屬第幾日
 }
 
 export interface Expense {

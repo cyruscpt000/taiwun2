@@ -1,5 +1,5 @@
 
-import { GoogleGenAI } from "@google/genai";
+import { GoogleGenAI, Type } from "@google/genai";
 
 export const getTaipeiSuggestions = async (context: string) => {
   try {
@@ -19,41 +19,55 @@ export const fetchFlightStatus = async (flightNumber: string, date: string) => {
   try {
     const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
     const prompt = `Find the real-time flight status for flight "${flightNumber}" on ${date}. 
-    I need:
-    1. Scheduled Arrival Time (ETA)
-    2. Terminal
-    3. Gate
-    Please return the information in a concise format like: "ETA: 10:30 AM, Terminal: 1, Gate: B7". 
-    If not found, say "No real-time info found". Respond in English for data accuracy.`;
+    I need to know the ETA, Terminal, and Gate. If any info is not yet assigned, leave it empty or "TBD".`;
 
     const response = await ai.models.generateContent({
       model: 'gemini-3-flash-preview',
       contents: prompt,
       config: {
-        tools: [{ googleSearch: {} }]
+        tools: [{ googleSearch: {} }],
+        responseMimeType: "application/json",
+        responseSchema: {
+          type: Type.OBJECT,
+          properties: {
+            eta: { type: Type.STRING, description: "Estimated time of arrival, e.g., 10:30 AM" },
+            terminal: { type: Type.STRING, description: "Terminal number/name" },
+            gate: { type: Type.STRING, description: "Gate number" },
+            summary: { type: Type.STRING, description: "Short summary of status" }
+          },
+          required: ["eta", "terminal", "gate"]
+        }
       }
     });
 
-    return response.text || "No data available";
+    return JSON.parse(response.text || "{}");
   } catch (error) {
     console.error("Flight Search Error:", error);
-    return "Error fetching flight data";
+    return { eta: "", terminal: "", gate: "", summary: "Error fetching data" };
   }
 };
 
 export const fetchTaipeiWeather = async (date: string) => {
   try {
     const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-    const prompt = `What is the weather forecast for Taipei on ${date}, 2025? 
-    If it's too far in the future, provide the typical climate/average temperature and conditions for late December/early January in Taipei.
-    Format the response as JSON: {"temp": "15-20°C", "condition": "Cloudy", "icon": "☁️"}`;
+    const prompt = `Provide the weather forecast for Taipei on ${date}, 2025. 
+    Return typical temperature and condition for late Dec/early Jan if specific forecast is unavailable.`;
 
     const response = await ai.models.generateContent({
       model: 'gemini-3-flash-preview',
       contents: prompt,
       config: {
+        tools: [{ googleSearch: {} }],
         responseMimeType: "application/json",
-        tools: [{ googleSearch: {} }]
+        responseSchema: {
+          type: Type.OBJECT,
+          properties: {
+            temp: { type: Type.STRING },
+            condition: { type: Type.STRING },
+            icon: { type: Type.STRING, description: "An emoji representing the weather" }
+          },
+          required: ["temp", "condition", "icon"]
+        }
       }
     });
 

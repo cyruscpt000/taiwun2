@@ -1,10 +1,9 @@
 
 import React, { useState, useEffect, useMemo } from 'react';
-import { TabType, ItineraryItem, Expense, PackingItem, Member } from './types';
-import { MEMBERS as INITIAL_MEMBERS, TRAVEL_DATES, DEFAULT_ITINERARY, INITIAL_PACKING_LIST } from './constants';
+import { TabType, ItineraryItem, Expense, PackingItem, Member, PrepCategory } from './types';
+import { MEMBERS as INITIAL_MEMBERS, TRAVEL_DATES, INITIAL_PACKING_LIST } from './constants';
 import { 
   Calendar, 
-  Info, 
   Wallet, 
   CheckSquare, 
   Users, 
@@ -15,90 +14,22 @@ import {
   Utensils, 
   Camera,
   X,
-  Save,
   Hotel,
   Trash2,
-  Calculator,
-  ArrowRightLeft,
-  CloudSun,
-  Leaf,
-  Flower2,
-  Coins,
-  TrendingUp,
-  ExternalLink,
-  RefreshCw
+  RefreshCw,
+  Edit3,
+  Loader2,
+  Heart,
+  Star,
+  ShoppingBag,
+  Info
 } from 'lucide-react';
 import { db } from './firebase';
-import { collection, onSnapshot, doc, updateDoc, addDoc, setDoc, deleteDoc, query, orderBy, getDocs } from 'firebase/firestore';
+import { collection, onSnapshot, doc, updateDoc, setDoc, deleteDoc, query, orderBy, getDocs } from 'firebase/firestore';
 
 // --- Sub-components ---
 
-const CountdownTimer: React.FC = () => {
-  const targetDate = new Date('2025-12-30T00:00:00');
-  const [daysLeft, setDaysLeft] = useState(0);
-
-  useEffect(() => {
-    const calculate = () => {
-      const now = new Date();
-      const diff = targetDate.getTime() - now.getTime();
-      setDaysLeft(Math.ceil(diff / (1000 * 60 * 60 * 24)));
-    };
-    calculate();
-    const timer = setInterval(calculate, 60000);
-    return () => clearInterval(timer);
-  }, []);
-
-  if (daysLeft < 0) return <span className="text-xs font-black text-emerald-600 text-center">正在享受台北中！🏕️</span>;
-  if (daysLeft === 0) return <span className="text-xs font-black text-orange-500 text-center">今日出發啦！🛫</span>;
-  
-  return (
-    <div className="text-[10px] font-black tracking-widest text-[#8D6E63] uppercase mt-1 flex items-center justify-center gap-1">
-      <Leaf size={10} className="text-[#8DB359]" /> 距離出發仲有 <span className="text-sm text-[#8DB359] mx-0.5">{daysLeft}</span> 日
-    </div>
-  );
-};
-
-const WeatherCard: React.FC<{ day: number }> = ({ day }) => {
-  const weatherMap: Record<number, { temp: string, icon: string, desc: string, color: string }> = {
-    1: { temp: '18-22°C', icon: '☁️', desc: '多雲時晴', color: 'from-[#A5D6A7] to-[#81C784]' },
-    2: { temp: '16-19°C', icon: '🌧️', desc: '跨年局部雨', color: 'from-[#81C784] to-[#66BB6A]' },
-    3: { temp: '17-21°C', icon: '☀️', desc: '晴朗舒適', color: 'from-[#FFF176] to-[#FFEE58]' },
-    4: { temp: '17-22°C', icon: '☁️', desc: '多雲', color: 'from-[#C5E1A5] to-[#AED581]' },
-    5: { temp: '19-23°C', icon: '🌤️', desc: '氣溫回升', color: 'from-[#81C784] to-[#A5D6A7]' },
-  };
-  const weather = weatherMap[day] || weatherMap[1];
-  return (
-    <div className="mt-4 mx-6 p-6 rounded-[40px] bg-[#FFF9E5] border-2 border-[#EEDEB0] flex items-center justify-between group cursor-pointer hover:shadow-md transition-all">
-      <div className="flex items-center gap-4">
-        <div className="p-3 bg-[#8DB359] rounded-2xl shadow-sm text-white">
-           <MapPin size={20} />
-        </div>
-        <div>
-          <h3 className="font-black text-[#4E342E] text-lg">台北市</h3>
-          <p className="text-sm text-[#8D6E63] font-bold">{weather.desc} • {weather.temp}</p>
-        </div>
-      </div>
-      <div className="text-[#8DB359] float-anim">
-         <Flower2 size={24} />
-      </div>
-    </div>
-  );
-};
-
-const TabIcon: React.FC<{ type: TabType; active: boolean }> = ({ type, active }) => {
-  const color = active ? 'text-[#8DB359]' : 'text-[#D7CCC8]';
-  const size = 26;
-  switch (type) {
-    case TabType.ITINERARY: return <Calendar className={color} size={size} />;
-    case TabType.LEDGER: return <Wallet className={color} size={size} />;
-    case TabType.PREP: return <CheckSquare className={color} size={size} />;
-    case TabType.MEMBERS: return <Users className={color} size={size} />;
-    case TabType.INFO: return <Info className={color} size={size} />;
-    default: return <Info className={color} size={size} />;
-  }
-};
-
-const TimelineCard: React.FC<{ item: ItineraryItem; onClick: (item: ItineraryItem) => void }> = ({ item, onClick }) => {
+const TimelineCard: React.FC<{ item: ItineraryItem }> = ({ item }) => {
   const Icon = () => {
     switch (item.type) {
       case 'FLIGHT': return <Plane className="text-white" size={24} />;
@@ -110,87 +41,64 @@ const TimelineCard: React.FC<{ item: ItineraryItem; onClick: (item: ItineraryIte
     }
   };
 
-  const handleMapClick = (e: React.MouseEvent) => {
-    e.stopPropagation(); 
-    if (item.location) {
-      window.open(`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(item.location)}`, '_blank');
-    }
-  };
-
   return (
-    <div onClick={() => onClick(item)} className="relative flex gap-6 mb-10 group cursor-pointer transition-all active:scale-95">
+    <div className="relative flex gap-6 mb-10 group transition-all">
       <div className="flex flex-col items-center">
         <div className="text-lg font-black text-[#4E342E] tabular-nums">{item.time}</div>
-        <div className="z-10 w-4 h-4 rounded-full bg-[#8DB359] border-[4px] border-[#FCF6E5] shadow-sm mt-2"></div>
+        <div className="z-10 w-4 h-4 rounded-full bg-[#8DB359] border-[4px] border-[#FCF6E5] mt-2"></div>
       </div>
-      <div className="flex-1 bg-[#FFFDF7] p-6 rounded-[35px] shadow-[0_8px_0_rgba(238,222,176,0.5)] border-2 border-[#EEDEB0] relative hover:translate-y-[-2px] transition-all">
+      <div className="flex-1 bg-white p-6 rounded-[35px] shadow-sm border-2 border-[#EEDEB0] relative">
         <div className="inline-flex p-3 bg-[#8DB359] rounded-2xl mb-4 shadow-sm"><Icon /></div>
         <h3 className="font-black text-[#4E342E] text-xl leading-tight mb-1">{item.title}</h3>
-        {item.subtitle && <p className="text-sm text-[#8D6E63] font-bold">{item.subtitle}</p>}
-        {item.location && (
-          <div 
-            onClick={handleMapClick}
-            className="flex items-center gap-1.5 mt-4 text-[#8DB359] text-[10px] font-black bg-[#E8F5E9] py-2 px-4 rounded-full w-fit hover:bg-[#8DB359] hover:text-white transition-all shadow-sm border border-[#8DB359]/20"
-          >
-            <MapPin size={10} className="shrink-0" />
-            <span className="truncate max-w-[140px] text-[10px]">{item.location}</span>
-            <ExternalLink size={10} />
-          </div>
-        )}
+        {item.location && <p className="text-[10px] text-[#8DB359] font-black uppercase mt-2">{item.location}</p>}
       </div>
     </div>
   );
 };
 
-// --- Main App ---
-
 const App: React.FC = () => {
   const [activeTab, setActiveTab] = useState<TabType>(TabType.ITINERARY);
   const [activeDay, setActiveDay] = useState<number>(1);
-  const [members, setMembers] = useState<Member[]>(INITIAL_MEMBERS);
+  const [activePrepCategory, setActivePrepCategory] = useState<PrepCategory>('TODO');
+  const [members] = useState<Member[]>(INITIAL_MEMBERS);
   const [currentMemberName, setCurrentMemberName] = useState<string>(INITIAL_MEMBERS[0].name);
   const [isLoading, setIsLoading] = useState(true);
-  
-  const currentUser = useMemo(() => members.find(m => m.name === currentMemberName) || members[0], [members, currentMemberName]);
+  const [isSaving, setIsSaving] = useState(false);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
   
   const [itineraryItems, setItineraryItems] = useState<ItineraryItem[]>([]);
   const [packingList, setPackingList] = useState<PackingItem[]>([]);
   const [expenses, setExpenses] = useState<Expense[]>([]);
 
-  // Modals
-  const [isItineraryModalOpen, setIsItineraryModalOpen] = useState(false);
-  const [editingItinerary, setEditingItinerary] = useState<Partial<ItineraryItem> | null>(null);
-  const [isCurrencyModalOpen, setIsCurrencyModalOpen] = useState(false);
-  const [isExpenseModalOpen, setIsExpenseModalOpen] = useState(false);
-  
-  const [newExpense, setNewExpense] = useState<Partial<Expense>>({
-    amount: 0, category: '食飯', description: '', paidBy: currentUser.name, date: new Date().toISOString().split('T')[0]
-  });
+  // Form states
+  const [newPrepItemName, setNewPrepItemName] = useState('');
+  const [newExpenseDesc, setNewExpenseDesc] = useState('');
+  const [newExpenseAmount, setNewExpenseAmount] = useState('');
+  const [newExpenseCategory, setNewExpenseCategory] = useState('FOOD');
 
-  // 1. 核心同步邏輯：確保 DEFAULT_ITINERARY 會推送到 Firebase
+  // 強化數據同步
   useEffect(() => {
-    if (!db) return;
+    if (!db) {
+        setIsLoading(false);
+        return;
+    }
 
-    const initializeCloudData = async () => {
+    const syncCloud = async () => {
       try {
-        const itenSnap = await getDocs(collection(db, "itinerary"));
-        if (itenSnap.empty) {
-          console.log("Detecting empty cloud storage. Seeding Excel itinerary...");
-          for (const item of DEFAULT_ITINERARY) {
-            await setDoc(doc(db, "itinerary", item.id), item);
-          }
-          for (const p of INITIAL_PACKING_LIST) {
-            await setDoc(doc(db, "packingList", p.id), p);
-          }
+        const packSnap = await getDocs(collection(db, "packingList"));
+        if (packSnap.empty || packSnap.size < 5) {
+          const batchPromises = INITIAL_PACKING_LIST.map(item => 
+            setDoc(doc(db, "packingList", item.id), item)
+          );
+          await Promise.all(batchPromises);
         }
       } catch (e) {
-        console.error("Initialization check failed:", e);
+        console.error("Cloud seed failed:", e);
       }
     };
 
-    initializeCloudData();
+    syncCloud();
 
-    // 2. 即時監聽雲端數據 (這就是真．同步)
     const unsubItinerary = onSnapshot(query(collection(db, "itinerary"), orderBy("time")), (snapshot) => {
       const items: ItineraryItem[] = [];
       snapshot.forEach(doc => items.push({ id: doc.id, ...doc.data() } as ItineraryItem));
@@ -201,7 +109,7 @@ const App: React.FC = () => {
     const unsubPacking = onSnapshot(collection(db, "packingList"), (snapshot) => {
       const items: PackingItem[] = [];
       snapshot.forEach(doc => items.push({ id: doc.id, ...doc.data() } as PackingItem));
-      setPackingList(items.length ? items : INITIAL_PACKING_LIST);
+      setPackingList(items);
     });
 
     const unsubExpenses = onSnapshot(query(collection(db, "expenses"), orderBy("date", "desc")), (snapshot) => {
@@ -210,320 +118,246 @@ const App: React.FC = () => {
       setExpenses(items);
     });
 
-    const unsubMembers = onSnapshot(collection(db, "members"), (snapshot) => {
-      const items: Member[] = [];
-      snapshot.forEach(doc => items.push(doc.data() as Member));
-      if (items.length) setMembers(items);
-    });
-
-    return () => { unsubItinerary(); unsubPacking(); unsubExpenses(); unsubMembers(); };
+    return () => { unsubItinerary(); unsubPacking(); unsubExpenses(); };
   }, []);
 
-  const filteredItinerary = useMemo(() => {
-    // 如果雲端仲係載入中，暫時顯示本地底稿免得空白
-    const source = itineraryItems.length > 0 ? itineraryItems : DEFAULT_ITINERARY;
-    return source
-      .filter(i => i.day === activeDay)
-      .sort((a, b) => a.time.localeCompare(b.time));
-  }, [itineraryItems, activeDay]);
+  const filteredPrepList = useMemo(() => {
+    return packingList
+      .filter(item => item.category === activePrepCategory)
+      .sort((a, b) => a.id.includes('custom') ? -1 : 1);
+  }, [packingList, activePrepCategory]);
 
-  // Currency Converter
-  const [twdInput, setTwdInput] = useState<string>("100");
-  const [hkdOutput, setHkdOutput] = useState<string>("");
-  const rate = 4.1;
-  useEffect(() => {
-    const twd = parseFloat(twdInput) || 0;
-    setHkdOutput((twd / rate).toFixed(2));
-  }, [twdInput]);
-
-  const totalTwd = useMemo(() => expenses.reduce((sum, e) => sum + (e.amount || 0), 0), [expenses]);
-  const totalHkd = useMemo(() => (totalTwd / rate).toFixed(1), [totalTwd]);
+  const totalTwd = useMemo(() => expenses.reduce((sum, e) => sum + (Number(e.amount) || 0), 0), [expenses]);
 
   // Actions
-  const saveExpense = async () => {
-    if (!newExpense.amount || !newExpense.description || !db) return;
-    await addDoc(collection(db, "expenses"), {
-      ...newExpense,
-      amount: Number(newExpense.amount),
-      createdAt: new Date()
-    });
-    setIsExpenseModalOpen(false);
-    setNewExpense({ amount: 0, category: '食飯', description: '', paidBy: currentUser.name, date: new Date().toISOString().split('T')[0] });
-  };
+  const toggleMemberCompletion = async (itemId: string, memberName: string) => {
+    if (!db) return;
+    const item = packingList.find(i => i.id === itemId);
+    if (!item) return;
 
-  const saveItinerary = async () => {
-    if (!editingItinerary?.title || !editingItinerary?.time || !db) return;
-    const itemData = {
-      ...editingItinerary,
-      day: activeDay,
-      updatedAt: new Date()
-    };
-    if (editingItinerary.id) {
-      await setDoc(doc(db, "itinerary", editingItinerary.id), itemData);
+    let newCompletedBy = [...(item.completedBy || [])];
+    if (newCompletedBy.includes(memberName)) {
+      newCompletedBy = newCompletedBy.filter(name => name !== memberName);
     } else {
-      const newRef = doc(collection(db, "itinerary"));
-      await setDoc(newRef, { ...itemData, id: newRef.id });
+      newCompletedBy.push(memberName);
     }
-    setIsItineraryModalOpen(false);
-    setEditingItinerary(null);
+    
+    await updateDoc(doc(db, "packingList", itemId), { completedBy: newCompletedBy });
   };
 
-  const deleteItinerary = async () => {
-    if (editingItinerary?.id && db) {
-      if (confirm("真係要刪除呢個行程？")) {
-        await deleteDoc(doc(db, "itinerary", editingItinerary.id));
-        setIsItineraryModalOpen(false);
-        setEditingItinerary(null);
-      }
-    }
+  const addPrepItem = async () => {
+    const name = newPrepItemName.trim();
+    if (!name || !db || isSaving) return;
+    setIsSaving(true);
+    try {
+      const newId = `custom-${Date.now()}`;
+      await setDoc(doc(db, "packingList", newId), {
+        id: newId,
+        name: name,
+        completedBy: [],
+        category: activePrepCategory
+      });
+      setNewPrepItemName('');
+    } catch (e) { alert("儲存失敗"); } finally { setIsSaving(false); }
   };
 
-  const togglePackingItem = async (id: string) => {
-    const item = packingList.find(i => i.id === id);
-    if (!item || !db) return;
-    await updateDoc(doc(db, "packingList", id), { completed: !item.completed });
+  const deletePrepItem = async (id: string) => {
+    if (!db || deletingId) return;
+    setDeletingId(id);
+    try { await deleteDoc(doc(db, "packingList", id)); } finally { setDeletingId(null); }
+  };
+
+  const addExpense = async () => {
+    const desc = newExpenseDesc.trim();
+    const amount = parseFloat(newExpenseAmount);
+    if (!desc || isNaN(amount) || !db || isSaving) return;
+    
+    setIsSaving(true);
+    try {
+      const newId = `expense-${Date.now()}`;
+      await setDoc(doc(db, "expenses", newId), {
+        id: newId,
+        description: desc,
+        amount: amount,
+        category: newExpenseCategory,
+        paidBy: currentMemberName,
+        date: new Date().toISOString()
+      });
+      setNewExpenseDesc('');
+      setNewExpenseAmount('');
+    } catch (e) { alert("記帳失敗"); } finally { setIsSaving(false); }
   };
 
   const deleteExpense = async (id: string) => {
-    if (db && confirm("確定要刪除呢筆數？")) await deleteDoc(doc(db, "expenses", id));
+    if (!db) return;
+    try { await deleteDoc(doc(db, "expenses", id)); } catch (e) { alert("刪除失敗"); }
   };
 
   return (
-    <div className="max-w-md mx-auto min-h-screen relative flex flex-col bg-[#FCF6E5] overflow-x-hidden font-sans paper-texture pb-32">
+    <div className="max-w-md mx-auto min-h-screen relative flex flex-col bg-[#FDFBF3] overflow-x-hidden pb-40">
       
-      {/* Loading Overlay */}
       {isLoading && (
-        <div className="fixed inset-0 bg-[#FCF6E5] z-[200] flex flex-col items-center justify-center">
+        <div className="fixed inset-0 bg-[#FDFBF3] z-[200] flex flex-col items-center justify-center">
           <RefreshCw className="text-[#8DB359] animate-spin mb-4" size={40} />
-          <p className="font-black text-[#4E342E] animate-pulse uppercase tracking-widest text-xs">正在載入雲端行程...</p>
-        </div>
-      )}
-
-      {/* Currency Modal */}
-      {isCurrencyModalOpen && (
-        <div className="fixed inset-0 bg-[#4E342E]/40 backdrop-blur-sm z-[150] flex items-center justify-center p-6">
-          <div className="bg-white w-full rounded-[50px] p-8 shadow-[0_20px_0_#EEDEB0] border-4 border-[#EEDEB0] animate-in zoom-in-95 duration-200">
-             <div className="flex justify-between items-center mb-8">
-                <h3 className="text-2xl font-black text-[#4E342E] text-center w-full">快速換算 💰</h3>
-                <button onClick={() => setIsCurrencyModalOpen(false)} className="absolute right-10 p-2 bg-[#F5F5F5] rounded-full hover:bg-rose-50 transition-colors"><X size={20}/></button>
-             </div>
-             <div className="space-y-6">
-                <div className="bg-[#FFF9E5] p-6 rounded-[35px] border-2 border-[#EEDEB0]">
-                   <p className="text-[10px] font-black uppercase text-[#A1887F] mb-2 tracking-widest text-center">台幣 TWD</p>
-                   <input type="number" inputMode="decimal" value={twdInput} onChange={e => setTwdInput(e.target.value)} className="bg-transparent border-none p-0 text-3xl font-black text-[#4E342E] w-full focus:ring-0 text-center outline-none" />
-                </div>
-                <div className="flex justify-center -my-3 relative z-10"><div className="bg-[#8DB359] text-white p-3 rounded-full shadow-lg border-4 border-white"><ArrowRightLeft size={20} /></div></div>
-                <div className="bg-[#F1F8E9] p-6 rounded-[35px] border-2 border-[#C5E1A5]">
-                   <p className="text-[10px] font-black uppercase text-[#689F38] mb-2 tracking-widest text-center">港幣 HKD</p>
-                   <div className="text-3xl font-black text-[#689F38] text-center">$ {hkdOutput}</div>
-                </div>
-             </div>
-             <button onClick={() => setIsCurrencyModalOpen(false)} className="w-full bg-[#4E342E] text-white py-5 rounded-[30px] font-black mt-8 shadow-lg active:translate-y-1 transition-all">好啦！</button>
-          </div>
-        </div>
-      )}
-
-      {/* Expense Modal */}
-      {isExpenseModalOpen && (
-        <div className="fixed inset-0 bg-[#4E342E]/50 backdrop-blur-sm z-[150] flex items-end sm:items-center justify-center p-0 sm:p-6">
-          <div className="bg-white w-full max-w-md rounded-t-[50px] sm:rounded-[50px] p-8 border-t-4 sm:border-4 border-[#EEDEB0] shadow-2xl animate-in slide-in-from-bottom duration-300">
-             <div className="flex justify-between items-center mb-6">
-                <h3 className="text-2xl font-black text-[#4E342E]">新增消費 🖊️</h3>
-                <button onClick={() => setIsExpenseModalOpen(false)} className="p-2 bg-slate-50 rounded-full hover:bg-rose-50 transition-colors"><X size={20}/></button>
-             </div>
-             <div className="space-y-5">
-                <div className="bg-[#FFF9E5] p-5 rounded-[30px] border-2 border-[#EEDEB0]">
-                   <label className="text-[10px] font-black uppercase text-[#A1887F] mb-1 block">金額 (TWD)</label>
-                   <input type="number" inputMode="decimal" value={newExpense.amount || ''} onChange={e => setNewExpense({...newExpense, amount: Number(e.target.value)})} placeholder="0" className="bg-transparent border-none p-0 text-3xl font-black text-[#4E342E] w-full focus:ring-0 outline-none" />
-                </div>
-                <div className="bg-white p-5 rounded-[30px] border-2 border-[#EEDEB0]">
-                   <label className="text-[10px] font-black uppercase text-[#A1887F] mb-1 block">項目描述</label>
-                   <input type="text" value={newExpense.description} onChange={e => setNewExpense({...newExpense, description: e.target.value})} placeholder="食咗啲乜好野？" className="bg-transparent border-none p-0 text-lg font-bold text-[#4E342E] w-full focus:ring-0 outline-none" />
-                </div>
-             </div>
-             <button onClick={saveExpense} className="w-full bg-[#8DB359] text-white py-5 rounded-[30px] font-black mt-8 shadow-lg active:scale-95 transition-all">記低佢！🌿</button>
-          </div>
-        </div>
-      )}
-
-      {/* Itinerary Modal */}
-      {isItineraryModalOpen && (
-        <div className="fixed inset-0 bg-[#4E342E]/50 backdrop-blur-sm z-[150] flex items-center justify-center p-6">
-          <div className="bg-white w-full max-w-md rounded-[50px] p-8 border-4 border-[#EEDEB0] shadow-2xl animate-in zoom-in-95 duration-200 overflow-y-auto max-h-[90vh]">
-             <div className="flex justify-between items-center mb-6">
-                <h3 className="text-2xl font-black text-[#4E342E]">{editingItinerary?.id ? '修改行程 ✍️' : '新增冒險 🗺️'}</h3>
-                <button onClick={() => { setIsItineraryModalOpen(false); setEditingItinerary(null); }} className="p-2 bg-slate-50 rounded-full hover:bg-rose-50 transition-colors"><X size={20}/></button>
-             </div>
-             <div className="space-y-4">
-                <div className="bg-[#FFF9E5] p-5 rounded-[30px] border-2 border-[#EEDEB0]">
-                   <label className="text-[10px] font-black uppercase text-[#A1887F] mb-1 block">標題</label>
-                   <input type="text" value={editingItinerary?.title || ''} onChange={e => setEditingItinerary({...editingItinerary, title: e.target.value})} placeholder="要去邊度？" className="bg-transparent border-none p-0 text-xl font-black text-[#4E342E] w-full focus:ring-0 outline-none" />
-                </div>
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="bg-white p-4 rounded-[25px] border-2 border-[#EEDEB0]">
-                     <label className="text-[10px] font-black uppercase text-[#A1887F] mb-2 block">時間</label>
-                     <input type="time" value={editingItinerary?.time || ''} onChange={e => setEditingItinerary({...editingItinerary, time: e.target.value})} className="bg-transparent border-none p-0 text-lg font-bold text-[#4E342E] w-full focus:ring-0 outline-none" />
-                  </div>
-                  <div className="bg-white p-4 rounded-[25px] border-2 border-[#EEDEB0]">
-                     <label className="text-[10px] font-black uppercase text-[#A1887F] mb-2 block">類別</label>
-                     <select value={editingItinerary?.type || 'SIGHT'} onChange={e => setEditingItinerary({...editingItinerary, type: e.target.value as any})} className="w-full bg-transparent border-none p-0 text-sm font-bold text-[#4E342E] focus:ring-0 outline-none">
-                        <option value="SIGHT">📸 景點</option>
-                        <option value="FOOD">🍱 嘢食</option>
-                        <option value="TRANSPORT">🚌 交通</option>
-                        <option value="FLIGHT">✈️ 飛機</option>
-                        <option value="HOTEL">🏨 住宿</option>
-                     </select>
-                  </div>
-                </div>
-                <div className="bg-white p-5 rounded-[30px] border-2 border-[#EEDEB0]">
-                   <label className="text-[10px] font-black uppercase text-[#A1887F] mb-1 block">詳細地址 (Google Map 用)</label>
-                   <input type="text" value={editingItinerary?.location || ''} onChange={e => setEditingItinerary({...editingItinerary, location: e.target.value})} placeholder="詳細地址" className="bg-transparent border-none p-0 text-base font-bold text-[#4E342E] w-full focus:ring-0 outline-none" />
-                </div>
-                <div className="bg-white p-5 rounded-[30px] border-2 border-[#EEDEB0]">
-                   <label className="text-[10px] font-black uppercase text-[#A1887F] mb-1 block">備註 / 副標題</label>
-                   <input type="text" value={editingItinerary?.subtitle || ''} onChange={e => setEditingItinerary({...editingItinerary, subtitle: e.target.value})} placeholder="備註內容" className="bg-transparent border-none p-0 text-base font-bold text-[#4E342E] w-full focus:ring-0 outline-none" />
-                </div>
-             </div>
-             <div className="flex gap-4 mt-8">
-                {editingItinerary?.id && (
-                   <button onClick={deleteItinerary} className="flex-1 bg-rose-50 text-rose-500 py-5 rounded-[30px] font-black shadow-sm active:scale-95 transition-all flex items-center justify-center gap-2 hover:bg-rose-100"><Trash2 size={20} /> 刪除</button>
-                )}
-                <button onClick={saveItinerary} className="flex-[2] bg-[#8DB359] text-white py-5 rounded-[30px] font-black shadow-lg active:scale-95 transition-all flex items-center justify-center gap-2 hover:bg-[#689F38]"><Save size={20} /> 儲存</button>
-             </div>
-          </div>
+          <p className="font-black text-[#4E342E] uppercase tracking-widest text-xs">小媛族正在連線...</p>
         </div>
       )}
 
       {/* Header */}
-      <header className="pt-16 pb-8 px-8 bg-[#FCF6E5]/90 sticky top-0 z-40">
-        <div className="flex justify-between items-start">
-          <div className="flex-1">
-            <h1 className="text-3xl font-black text-[#4E342E] tracking-tighter flex items-center gap-2">Taipei 2025 <Leaf className="text-[#8DB359]" fill="#8DB359" size={24} /></h1>
-            <CountdownTimer />
-          </div>
-          <div className="flex gap-3">
-             <button onClick={() => setIsCurrencyModalOpen(true)} className="p-3 bg-white text-[#8DB359] rounded-[22px] shadow-[0_4px_0_#EEDEB0] border-2 border-[#EEDEB0] active:translate-y-1 transition-all"><Calculator size={22} /></button>
-             <div onClick={() => setActiveTab(TabType.MEMBERS)} className="w-12 h-12 rounded-[22px] overflow-hidden border-4 border-white shadow-md cursor-pointer hover:scale-105 transition-all"><img src={currentUser.avatar} alt="Avatar" className="w-full h-full object-cover" /></div>
-          </div>
+      <header className="pt-12 pb-6 px-8 bg-[#FDFBF3] sticky top-0 z-40">
+        <div className="flex justify-between items-center mb-2">
+            <div className="flex flex-col">
+                <h1 className="text-3xl font-black text-[#85C2A2] tracking-tighter drop-shadow-sm">小媛族</h1>
+                <p className="text-[10px] font-bold text-[#8DB359] flex items-center gap-1 uppercase tracking-wider">✈️ 2025 TAIPEI TRIP</p>
+            </div>
+            <div className="flex -space-x-3">
+                {members.map(m => (
+                    <div key={m.name} onClick={() => setCurrentMemberName(m.name)} className={`w-12 h-12 rounded-full border-2 border-white overflow-hidden shadow-md cursor-pointer transition-all ${currentMemberName === m.name ? 'ring-2 ring-[#8DB359] scale-110 z-10' : 'opacity-40 hover:opacity-100'}`}>
+                        <img src={m.avatar} alt={m.name} className="w-full h-full object-cover" />
+                    </div>
+                ))}
+            </div>
         </div>
-        {activeTab === TabType.ITINERARY && (
-          <div className="flex gap-6 overflow-x-auto custom-scrollbar py-6 -mx-8 px-8 mt-4">
-            {TRAVEL_DATES.map(date => (
-              <div key={date.day} onClick={() => setActiveDay(date.day)} className={`flex-shrink-0 flex flex-col items-center justify-center w-[76px] h-[100px] rounded-[35px] transition-all duration-300 cursor-pointer ${
-                activeDay === date.day ? 'bg-[#8DB359] text-white shadow-[0_6px_0_#689F38] -translate-y-1' : 'text-[#D7CCC8] bg-white border-2 border-[#EEDEB0]'
-              }`}>
-                <span className="text-[10px] font-black mb-1 opacity-80 uppercase tracking-tighter">Day {date.day}</span>
-                <span className="text-2xl font-black leading-none mb-1">{date.label.split('/')[1]}</span>
-                <span className="text-[10px] font-black opacity-80">週{date.weekday}</span>
-              </div>
-            ))}
-          </div>
-        )}
       </header>
 
-      <main className="flex-1">
+      <main className="flex-1 px-6">
         {activeTab === TabType.ITINERARY ? (
           <div className="pb-8">
-            <WeatherCard day={activeDay} />
-            <div className="flex justify-between items-center px-8 mt-12 mb-8">
-              <h2 className="text-2xl font-black text-[#4E342E] flex items-center gap-3"><div className="w-2 h-8 bg-[#8DB359] rounded-full"></div>今日冒險</h2>
-              <button onClick={() => { setEditingItinerary({ time: '12:00', type: 'SIGHT' }); setIsItineraryModalOpen(true); }} className="bg-white text-[#8DB359] px-5 py-3 rounded-[24px] text-sm font-black flex items-center gap-1 shadow-[0_4px_0_#EEDEB0] border-2 border-[#EEDEB0] active:translate-y-1 transition-all"><Plus size={18} /> 新增</button>
+            <div className="flex gap-4 overflow-x-auto custom-scrollbar mb-8 py-2">
+                {TRAVEL_DATES.map(date => (
+                <div key={date.day} onClick={() => setActiveDay(date.day)} className={`flex-shrink-0 flex flex-col items-center justify-center w-16 h-20 rounded-3xl transition-all ${
+                    activeDay === date.day ? 'bg-[#8DB359] text-white shadow-lg scale-105' : 'bg-white border-2 border-[#EEDEB0] text-[#8DB359]'
+                }`}>
+                    <span className="text-[10px] font-black">{date.label}</span>
+                    <span className="text-lg font-black">{date.weekday}</span>
+                </div>
+                ))}
             </div>
-            <div className="relative px-8">
-              {filteredItinerary.length > 0 ? (
-                filteredItinerary.map(item => <TimelineCard key={item.id} item={item} onClick={(i) => { setEditingItinerary(i); setIsItineraryModalOpen(true); }} />)
-              ) : (
-                <div className="text-center py-20 opacity-30 font-black uppercase tracking-widest text-sm italic">今日暫無行程</div>
-              )}
+            <div className="space-y-4">
+                {itineraryItems.filter(i => i.day === activeDay).map(item => <TimelineCard key={item.id} item={item} />)}
             </div>
           </div>
-        ) : activeTab === TabType.LEDGER ? (
-          <div className="px-8 pb-12 pt-4">
-             <div className="grid grid-cols-2 gap-4 mb-10">
-                <div className="bg-white rounded-[40px] p-6 border-4 border-[#EEDEB0] shadow-[0_8px_0_#EEDEB0]">
-                   <div className="flex items-center gap-2 mb-2"><Coins className="text-[#8DB359]" size={16} /><span className="text-[10px] font-black text-[#A1887F] uppercase tracking-widest">總台幣</span></div>
-                   <p className="text-2xl font-black text-[#4E342E] tabular-nums">{totalTwd.toLocaleString()}</p>
-                </div>
-                <div className="bg-[#F1F8E9] rounded-[40px] p-6 border-4 border-[#C5E1A5] shadow-[0_8px_0_#C5E1A5]">
-                   <div className="flex items-center gap-2 mb-2"><TrendingUp className="text-[#689F38]" size={16} /><span className="text-[10px] font-black text-[#689F38] uppercase tracking-widest">折合港幣</span></div>
-                   <p className="text-2xl font-black text-[#4E342E] tabular-nums">$ {totalHkd}</p>
-                </div>
+        ) : activeTab === TabType.PREP ? (
+          <div className="pb-8">
+             <div className="grid grid-cols-4 gap-2 mb-8 bg-[#E9F3E8] p-1.5 rounded-[30px]">
+                {['TODO', 'LUGGAGE', 'WANT', 'BUY'].map(cat => (
+                  <button key={cat} onClick={() => setActivePrepCategory(cat as PrepCategory)} className={`py-3 rounded-[24px] text-[13px] font-black transition-all ${activePrepCategory === cat ? 'bg-[#8DB359] text-white shadow-md' : 'text-[#8DB359]/60'}`}>
+                    {cat === 'TODO' ? '待辦' : cat === 'LUGGAGE' ? '行李' : cat === 'WANT' ? '想去' : '採購'}
+                  </button>
+                ))}
              </div>
-             <div className="flex justify-between items-center mb-6">
-                <h2 className="text-2xl font-black text-[#4E342E] flex items-center gap-3">收支明細</h2>
-                <button onClick={() => setIsExpenseModalOpen(true)} className="bg-[#8DB359] text-white px-5 py-3 rounded-[24px] text-sm font-black shadow-lg flex items-center gap-1 active:scale-90 transition-all"><Plus size={18} /> 記帳</button>
+             <div className="relative mb-10">
+                <div className="bg-white rounded-[35px] border-4 border-[#E8F1E7] px-8 py-6 shadow-sm flex items-center min-h-[100px]">
+                   <input type="text" value={newPrepItemName} onChange={e => setNewPrepItemName(e.target.value)} placeholder={`新增項目...`} className="flex-1 bg-transparent border-none focus:ring-0 font-black text-[#5E4E42] text-xl outline-none" />
+                </div>
+                <button onClick={addPrepItem} disabled={isSaving || !newPrepItemName.trim()} className="absolute right-2 bottom-2 w-16 h-16 bg-[#8DB359] rounded-[24px] flex items-center justify-center text-white shadow-lg active:scale-90 transition-all"><Plus size={36} /></button>
              </div>
-             <div className="space-y-4">{expenses.map(exp => (
-                <div key={exp.id} className="bg-white rounded-[35px] p-6 border-2 border-[#EEDEB0] shadow-[0_6px_0_rgba(238,222,176,0.3)] relative group">
-                   <div className="flex justify-between items-start">
-                      <div className="flex gap-4">
-                         <div className="w-12 h-12 bg-[#FFF9E5] rounded-2xl flex items-center justify-center text-xl shadow-sm">{exp.category === '食飯' ? '🍱' : '🎒'}</div>
-                         <div><h4 className="font-black text-[#4E342E]">{exp.description}</h4><span className="text-[9px] font-black px-2 py-0.5 rounded-full bg-blue-100 text-blue-600">{exp.paidBy} 畀錢</span></div>
+             <div className="space-y-6">
+                {filteredPrepList.map(item => (
+                    <div key={item.id} className="flex flex-col p-6 rounded-[35px] border-4 bg-white shadow-sm border-[#E8F1E7]">
+                      <div className="flex items-center justify-between mb-4">
+                         <span className="text-xl font-black text-[#5E4E42]">{item.name}</span>
+                         <button onClick={() => deletePrepItem(item.id)} className="p-3 text-[#D7CCC8] hover:text-rose-500 transition-colors"><Trash2 size={20} /></button>
                       </div>
-                      <div className="text-right"><p className="text-lg font-black text-[#4E342E] tabular-nums">{exp.amount} TWD</p></div>
-                   </div>
-                   <button onClick={() => deleteExpense(exp.id)} className="absolute -top-2 -right-2 bg-rose-500 text-white p-1 rounded-full opacity-0 group-hover:opacity-100 transition-opacity"><X size={12}/></button>
-                </div>
-             ))}</div>
-          </div>
-        ) : activeTab === TabType.MEMBERS ? (
-          <div className="px-8 pb-8 pt-4">
-             <div className="flex items-center gap-5 mb-10">
-                <div className="bg-[#E8F5E9] p-5 rounded-[30px] text-[#8DB359] shadow-inner"><Users size={32} /></div>
-                <div><h2 className="text-3xl font-black text-[#4E342E]">Trip Members</h2><p className="text-xs font-bold text-[#A1887F]">Collaborators for Taipei 2025</p></div>
-             </div>
-             <div className="grid grid-cols-2 gap-6">
-                {members.map(member => (
-                  <div key={member.name} onClick={() => setCurrentMemberName(member.name)} className={`bg-white rounded-[45px] p-6 text-center border-4 transition-all active:scale-95 cursor-pointer relative ${currentUser.name === member.name ? 'border-[#8DB359] shadow-[0_12px_0_#E8F5E9]' : 'border-white shadow-[0_12px_0_rgba(78,52,46,0.05)]'}`}>
-                     <div className="relative mx-auto w-24 h-24 mb-5 group">
-                        <img src={member.avatar} alt={member.name} className={`w-full h-full object-cover rounded-full border-4 shadow-sm ${currentUser.name === member.name ? 'border-[#8DB359]' : 'border-[#F5F5F5]'}`} />
-                     </div>
-                     <h3 className="text-xl font-black text-[#4E342E] mb-1">{member.name}</h3>
-                     <p className="text-[10px] font-bold text-[#A1887F] uppercase tracking-wider mb-4 leading-relaxed">{member.role}</p>
-                     {currentUser.name === member.name && <div className="inline-block bg-[#E8F5E9] text-[#8DB359] text-[10px] font-black px-5 py-1.5 rounded-full uppercase tracking-widest border border-[#8DB359]/20">YOU</div>}
-                  </div>
+                      <div className="flex gap-3">
+                        {members.map(m => {
+                          const isDone = (item.completedBy || []).includes(m.name);
+                          return (
+                            <button key={m.name} onClick={() => toggleMemberCompletion(item.id, m.name)} className={`px-5 py-3 rounded-full text-[11px] font-black flex items-center gap-2 border-2 ${isDone ? 'bg-[#8DB359] border-[#8DB359] text-white' : 'bg-white border-[#E8F1E7] text-[#8DB359]'}`}>
+                              <img src={m.avatar} className="w-5 h-5 rounded-full object-cover" /> {m.name}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
                 ))}
              </div>
           </div>
-        ) : activeTab === TabType.PREP ? (
-          <div className="px-8 pb-8 pt-4">
-             <h2 className="text-2xl font-black text-[#4E342E] mb-8">準備清單 🎒</h2>
-             <div className="space-y-4">{packingList.map(item => (
-                <div key={item.id} className={`flex items-center justify-between p-6 rounded-[35px] border-2 transition-all ${item.completed ? 'bg-[#F5F5F5] border-[#E0E0E0] opacity-50' : 'bg-white border-[#EEDEB0] shadow-[0_6px_0_#EEDEB0]'}`}>
-                  <div className="flex items-center gap-5 flex-1 cursor-pointer" onClick={() => togglePackingItem(item.id)}>
-                    <div className={`w-8 h-8 rounded-2xl border-2 flex items-center justify-center transition-all ${item.completed ? 'bg-[#8DB359] border-[#8DB359]' : 'border-[#EEDEB0] bg-[#FFF9E5]'}`}>
-                      {item.completed && <CheckSquare className="text-white" size={18} />}
+        ) : activeTab === TabType.LEDGER ? (
+            <div className="pt-4 pb-8">
+                {/* Total Summary */}
+                <div className="grid grid-cols-2 gap-4 mb-8">
+                    <div className="bg-[#8DB359] p-6 rounded-[35px] shadow-lg text-white">
+                        <p className="text-[10px] font-black uppercase opacity-80">總額 (TWD)</p>
+                        <p className="text-3xl font-black tabular-nums">{totalTwd}</p>
                     </div>
-                    <div><span className={`text-lg font-black ${item.completed ? 'line-through text-[#A1887F]' : 'text-[#4E342E]'}`}>{item.name}</span></div>
-                  </div>
+                    <div className="bg-white p-6 rounded-[35px] border-4 border-[#EEDEB0] shadow-sm">
+                        <p className="text-[10px] font-black text-[#8D6E63] uppercase">約港幣 (HKD)</p>
+                        <p className="text-2xl font-black tabular-nums">${(totalTwd / 4.1).toFixed(1)}</p>
+                    </div>
                 </div>
-             ))}</div>
-          </div>
-        ) : activeTab === TabType.INFO ? (
-          <div className="px-8 pb-8 pt-4">
-             <h2 className="text-2xl font-black text-[#4E342E] mb-6"><MapPin className="text-[#8DB359]" size={28} /> 旅行資訊</h2>
-             <a href="tel:110" className="bg-white rounded-[40px] p-8 text-center border-4 border-[#EEDEB0] shadow-[0_8px_0_#EEDEB0] block mb-6 active:translate-y-1 transition-all">
-                <p className="text-[10px] font-black text-[#A1887F] uppercase mb-3">報警 (110)</p>
-                <p className="text-5xl font-black text-rose-500">110</p>
-             </a>
-             <a href="tel:119" className="bg-white rounded-[40px] p-8 text-center border-4 border-[#EEDEB0] shadow-[0_8px_0_#EEDEB0] block active:translate-y-1 transition-all">
-                <p className="text-[10px] font-black text-[#A1887F] uppercase mb-3">救護 (119)</p>
-                <p className="text-5xl font-black text-rose-500">119</p>
-             </a>
+
+                {/* Input Area */}
+                <div className="bg-white rounded-[40px] p-6 border-4 border-[#E8F1E7] shadow-sm mb-10">
+                    <h3 className="font-black text-[#4E342E] mb-4 flex items-center gap-2"><Edit3 size={18} /> 快速記帳</h3>
+                    <div className="space-y-4">
+                        <div className="grid grid-cols-2 gap-3">
+                            <input type="text" value={newExpenseDesc} onChange={e => setNewExpenseDesc(e.target.value)} placeholder="項目名 (例: 魯肉飯)" className="bg-[#FDFBF3] p-4 rounded-2xl border-none font-black focus:ring-2 ring-[#8DB359] text-[#4E342E]" />
+                            <input type="number" value={newExpenseAmount} onChange={e => setNewExpenseAmount(e.target.value)} placeholder="金額 (TWD)" className="bg-[#FDFBF3] p-4 rounded-2xl border-none font-black focus:ring-2 ring-[#8DB359] text-[#4E342E]" />
+                        </div>
+                        <div className="flex gap-2">
+                            {['FOOD', 'TRANSPORT', 'SHOPPING', 'OTHER'].map(cat => (
+                                <button key={cat} onClick={() => setNewExpenseCategory(cat)} className={`flex-1 py-3 rounded-xl text-[10px] font-black transition-all ${newExpenseCategory === cat ? 'bg-[#8DB359] text-white' : 'bg-[#FDFBF3] text-[#8DB359]'}`}>
+                                    {cat === 'FOOD' ? '餐飲' : cat === 'TRANSPORT' ? '交通' : cat === 'SHOPPING' ? '購物' : '其他'}
+                                </button>
+                            ))}
+                        </div>
+                        <button onClick={addExpense} disabled={isSaving} className="w-full py-4 bg-[#8DB359] text-white rounded-2xl font-black shadow-lg flex items-center justify-center gap-2 active:scale-95 transition-all">
+                           {isSaving ? <Loader2 className="animate-spin" /> : <><Plus size={20} /> 記低佢</>}
+                        </button>
+                    </div>
+                </div>
+
+                {/* List */}
+                <div className="space-y-4">
+                    {expenses.map(e => (
+                        <div key={e.id} className="bg-white p-6 rounded-[30px] border-2 border-[#EEDEB0] flex items-center justify-between shadow-sm">
+                            <div className="flex items-center gap-4">
+                                <div className="w-12 h-12 bg-[#FDFBF3] rounded-2xl flex items-center justify-center text-[#8DB359]">
+                                    {e.category === 'FOOD' ? <Utensils size={24}/> : e.category === 'SHOPPING' ? <ShoppingBag size={24}/> : e.category === 'TRANSPORT' ? <Bus size={24}/> : <Info size={24}/>}
+                                </div>
+                                <div>
+                                    <p className="font-black text-[#4E342E]">{e.description}</p>
+                                    <p className="text-[10px] font-bold text-[#8DB359] uppercase">{e.paidBy} 畀咗</p>
+                                </div>
+                            </div>
+                            <div className="flex items-center gap-4">
+                                <p className="text-xl font-black text-[#4E342E]">{e.amount} <span className="text-[10px]">TWD</span></p>
+                                <button onClick={() => deleteExpense(e.id)} className="p-2 text-[#D7CCC8] hover:text-rose-500"><Trash2 size={18}/></button>
+                            </div>
+                        </div>
+                    ))}
+                    {expenses.length === 0 && <p className="text-center opacity-20 font-black italic py-10">暫時未有開支</p>}
+                </div>
+            </div>
+        ) : activeTab === TabType.MEMBERS ? (
+          <div className="pt-4 pb-8">
+            <h2 className="text-2xl font-black text-[#4E342E] mb-6 px-2 flex items-center gap-2"><Users size={24} className="text-[#8DB359]" /> 旅行伙伴</h2>
+            <div className="space-y-6">
+              {members.map(member => (
+                <div key={member.name} className={`bg-white rounded-[40px] p-8 border-4 border-[#E8F1E7] shadow-sm flex flex-col items-center relative transition-all ${currentMemberName === member.name ? 'ring-4 ring-[#8DB359]/30 scale-[1.02]' : ''}`}>
+                  <div className="w-32 h-32 rounded-full border-8 border-[#FDFBF3] overflow-hidden shadow-xl mb-6 ring-4 ring-[#E8F1E7]"><img src={member.avatar} className="w-full h-full object-cover" /></div>
+                  <h3 className="text-2xl font-black text-[#4E342E] mb-1">{member.name}</h3>
+                  <p className="text-[#8DB359] font-black uppercase text-xs tracking-widest mb-6">{member.role}</p>
+                  <button onClick={() => setCurrentMemberName(member.name)} className={`w-full py-4 rounded-[25px] font-black transition-all flex items-center justify-center gap-2 ${currentMemberName === member.name ? 'bg-[#8DB359] text-white' : 'bg-[#FDFBF3] text-[#8DB359] border-2 border-[#E8F1E7]'}`}>
+                    {currentMemberName === member.name ? <Star size={18} fill="currentColor" /> : <Heart size={18} />} {currentMemberName === member.name ? '已切換為此身分' : '切換為此身分'}
+                  </button>
+                </div>
+              ))}
+            </div>
           </div>
         ) : null}
       </main>
 
-      {/* Navigation */}
-      <nav className="fixed bottom-10 left-6 right-6 h-24 bg-[#FFFDF7]/95 backdrop-blur-xl rounded-[45px] border-4 border-[#EEDEB0] shadow-[0_15px_35px_rgba(78,52,46,0.15)] z-40 flex items-center justify-around px-4">
-        {[TabType.ITINERARY, TabType.INFO, TabType.LEDGER, TabType.PREP, TabType.MEMBERS].map(type => (
-          <button key={type} onClick={() => setActiveTab(type)} className="flex flex-col items-center gap-1 transition-all active:scale-75 group">
-             <div className={`p-2.5 rounded-2xl transition-all ${activeTab === type ? 'bg-[#8DB359] text-white shadow-lg -translate-y-2' : 'bg-transparent'}`}>
-               <TabIcon type={type} active={activeTab === type} />
-             </div>
-             <span className={`text-[10px] font-black tracking-tighter ${activeTab === type ? 'text-[#8DB359]' : 'text-[#D7CCC8]'}`}>
-               {type === TabType.ITINERARY ? '行程' : type === TabType.INFO ? '資訊' : type === TabType.LEDGER ? '記帳' : type === TabType.PREP ? '準備' : '成員'}
-             </span>
+      <nav className="fixed bottom-8 left-4 right-4 h-24 bg-white/95 backdrop-blur-md rounded-[40px] border-4 border-[#E8F1E7] shadow-xl z-50 flex items-center justify-around px-4">
+        {[
+          { type: TabType.ITINERARY, label: '行程', icon: <Calendar size={24}/> },
+          { type: TabType.LEDGER, label: '記帳', icon: <Wallet size={24}/> },
+          { type: TabType.PREP, label: '準備', icon: <CheckSquare size={24}/> },
+          { type: TabType.MEMBERS, label: '成員', icon: <Users size={24}/> }
+        ].map(n => (
+          <button key={n.label} onClick={() => setActiveTab(n.type as TabType)} className={`flex flex-col items-center gap-1 transition-all active:scale-90 ${activeTab === n.type ? 'text-[#8DB359] -translate-y-2' : 'text-[#D7CCC8]'}`}>
+            {n.icon} <span className="text-[10px] font-black">{n.label}</span>
           </button>
         ))}
       </nav>

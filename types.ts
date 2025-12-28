@@ -7,6 +7,8 @@ export enum TabType {
   MEMBERS = 'MEMBERS'
 }
 
+export type PrepCategory = 'TODO' | 'LUGGAGE' | 'WANT' | 'BUY';
+
 export interface ItineraryItem {
   id: string;
   time: string;
@@ -32,7 +34,8 @@ export interface Expense {
 export interface PackingItem {
   id: string;
   name: string;
-  completed: boolean;
+  completedBy: string[]; // Store array of member names who completed this task
+  category: PrepCategory;
   assignedTo?: string;
 }
 

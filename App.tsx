@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { TabType, ItineraryItem, Expense, PackingItem } from './types';
 import { MEMBERS, INITIAL_PACKING_LIST, TRAVEL_DATES, DEFAULT_ITINERARY } from './constants';
 import { 
@@ -21,6 +21,11 @@ import {
   X,
   Save,
   Hotel,
+  Navigation,
+  Image as ImageIcon,
+  Clock,
+  ThermometerSun,
+  RotateCcw,
   Trash2
 } from 'lucide-react';
 import { getTaipeiSuggestions } from './geminiService';
@@ -29,40 +34,67 @@ import { collection, onSnapshot, doc, updateDoc, addDoc, setDoc, deleteDoc, quer
 
 // --- Sub-components ---
 
+const CountdownTimer: React.FC = () => {
+  const targetDate = new Date('2025-12-30T00:00:00');
+  const [daysLeft, setDaysLeft] = useState(0);
+
+  useEffect(() => {
+    const calculate = () => {
+      const diff = targetDate.getTime() - new Date().getTime();
+      setDaysLeft(Math.ceil(diff / (1000 * 60 * 60 * 24)));
+    };
+    calculate();
+    const timer = setInterval(calculate, 60000);
+    return () => clearInterval(timer);
+  }, []);
+
+  if (daysLeft <= 0) return <span className="text-xs font-black text-emerald-500">旅程進行中！🔥</span>;
+  return (
+    <div className="bg-blue-600 text-white px-3 py-1 rounded-full text-[10px] font-black tracking-widest flex items-center gap-1 shadow-md shadow-blue-100">
+      <Clock size={12} /> 距離出發還有 {daysLeft} 天
+    </div>
+  );
+};
+
+const WeatherCard: React.FC<{ day: number }> = ({ day }) => {
+  const weatherMap: Record<number, { temp: string, icon: string, desc: string, color: string }> = {
+    1: { temp: '18-22°C', icon: '☁️', desc: '多雲時晴', color: 'from-blue-400 to-indigo-400' },
+    2: { temp: '16-19°C', icon: '🌧️', desc: '跨年局部雨', color: 'from-slate-400 to-blue-500' },
+    3: { temp: '17-21°C', icon: '☀️', desc: '晴朗舒適', color: 'from-orange-400 to-amber-400' },
+    4: { temp: '17-22°C', icon: '☁️', desc: '多雲', color: 'from-blue-300 to-slate-400' },
+    5: { temp: '19-23°C', icon: '🌤️', desc: '氣溫回升', color: 'from-sky-400 to-indigo-400' },
+  };
+  const weather = weatherMap[day] || weatherMap[1];
+  return (
+    <div className={`mt-4 mx-6 p-4 rounded-[32px] bg-gradient-to-br ${weather.color} text-white shadow-lg flex items-center justify-between`}>
+      <div className="flex items-center gap-3">
+        <span className="text-3xl">{weather.icon}</span>
+        <div>
+          <p className="text-[10px] font-black uppercase opacity-70 tracking-widest">Taipei Weather</p>
+          <p className="font-bold text-sm">{weather.desc}</p>
+        </div>
+      </div>
+      <div className="flex items-center gap-1.5 bg-white/20 px-3 py-2 rounded-2xl backdrop-blur-sm">
+        <ThermometerSun size={16} />
+        <span className="font-black text-sm">{weather.temp}</span>
+      </div>
+    </div>
+  );
+};
+
 const TabIcon: React.FC<{ type: TabType; active: boolean }> = ({ type, active }) => {
-  const color = active ? 'text-blue-500' : 'text-gray-400';
-  const bgColor = active ? 'bg-blue-100' : 'bg-transparent';
-  
+  const color = active ? 'text-blue-600' : 'text-slate-400';
+  const size = 24;
   switch (type) {
-    case TabType.ITINERARY: return (
-      <div className={`p-2 rounded-2xl ${bgColor} transition-all duration-300`}>
-        <Calendar className={color} size={24} />
-      </div>
-    );
-    case TabType.INFO: return (
-      <div className={`p-2 rounded-2xl ${bgColor} transition-all duration-300`}>
-        <Info className={color} size={24} />
-      </div>
-    );
-    case TabType.LEDGER: return (
-      <div className={`p-2 rounded-2xl ${bgColor} transition-all duration-300`}>
-        <Wallet className={color} size={24} />
-      </div>
-    );
-    case TabType.PREP: return (
-      <div className={`p-2 rounded-2xl ${bgColor} transition-all duration-300`}>
-        <CheckSquare className={color} size={24} />
-      </div>
-    );
-    case TabType.MEMBERS: return (
-      <div className={`p-2 rounded-2xl ${bgColor} transition-all duration-300`}>
-        <Users className={color} size={24} />
-      </div>
-    );
+    case TabType.ITINERARY: return <Calendar className={color} size={size} />;
+    case TabType.LEDGER: return <Wallet className={color} size={size} />;
+    case TabType.PREP: return <CheckSquare className={color} size={size} />;
+    case TabType.MEMBERS: return <Users className={color} size={size} />;
+    default: return <Info className={color} size={size} />;
   }
 };
 
-const TimelineCard: React.FC<{ item: ItineraryItem; onEdit: (item: ItineraryItem) => void }> = ({ item, onEdit }) => {
+const TimelineCard: React.FC<{ item: ItineraryItem; onClick: (item: ItineraryItem) => void }> = ({ item, onClick }) => {
   const Icon = () => {
     switch (item.type) {
       case 'FLIGHT': return <Plane className="text-blue-500" size={20} />;
@@ -73,33 +105,20 @@ const TimelineCard: React.FC<{ item: ItineraryItem; onEdit: (item: ItineraryItem
       default: return <MapPin className="text-blue-500" size={20} />;
     }
   };
-
   return (
-    <div className="relative flex gap-4 mb-8 group">
+    <div onClick={() => onClick(item)} className="relative flex gap-4 mb-8 group cursor-pointer active:scale-95 transition-all">
       <div className="flex flex-col items-center">
         <div className="z-10 w-4 h-4 rounded-full bg-blue-500 border-4 border-white shadow-md mt-1 transition-transform group-hover:scale-125"></div>
         <div className="text-[11px] text-slate-500 font-bold mt-2 bg-slate-100 px-2 py-0.5 rounded-full">{item.time}</div>
       </div>
-      
       <div className="flex-1 bg-white p-5 rounded-3xl shadow-[0_4px_20px_-4px_rgba(0,0,0,0.05)] border border-slate-50 relative">
-        <button 
-          onClick={() => onEdit(item)}
-          className="absolute top-4 right-4 p-2 text-slate-300 hover:text-blue-500 hover:bg-blue-50 rounded-full transition-all"
-        >
-          <Edit2 size={14} />
-        </button>
-        
-        <div className="inline-flex p-2.5 bg-slate-50 rounded-2xl mb-3">
-          <Icon />
-        </div>
-        
+        <div className="inline-flex p-2.5 bg-slate-50 rounded-2xl mb-3"><Icon /></div>
         <h3 className="font-bold text-slate-800 text-lg leading-tight mb-1 pr-8">{item.title}</h3>
         {item.subtitle && <p className="text-sm text-slate-500 font-medium mb-2">{item.subtitle}</p>}
-        
         {item.location && (
           <div className="flex items-start gap-1.5 mt-3 text-slate-400 text-xs">
             <MapPin size={14} className="text-blue-400 shrink-0 mt-0.5" />
-            <span className="leading-snug">{item.location}</span>
+            <span className="leading-snug truncate">{item.location}</span>
           </div>
         )}
       </div>
@@ -111,156 +130,91 @@ const App: React.FC = () => {
   const [activeTab, setActiveTab] = useState<TabType>(TabType.ITINERARY);
   const [activeDay, setActiveDay] = useState<number>(1);
   const [itineraryItems, setItineraryItems] = useState<ItineraryItem[]>([]);
-  const [expenses, setExpenses] = useState<Expense[]>([]);
   const [packingList, setPackingList] = useState<PackingItem[]>(INITIAL_PACKING_LIST);
   const [aiSuggestion, setAiSuggestion] = useState<string>("");
   const [loadingAi, setLoadingAi] = useState(false);
   const [isSyncing, setIsSyncing] = useState(false);
 
-  // Modal States
+  // Modals
   const [isModalOpen, setIsModalOpen] = useState(false);
-  const [editingItem, setEditingItem] = useState<Partial<ItineraryItem> | null>(null);
-  
+  const [isDetailOpen, setIsDetailOpen] = useState(false);
   const [isPackingModalOpen, setIsPackingModalOpen] = useState(false);
+  
+  const [editingItem, setEditingItem] = useState<Partial<ItineraryItem> | null>(null);
+  const [viewingItem, setViewingItem] = useState<ItineraryItem | null>(null);
   const [editingPackingItem, setEditingPackingItem] = useState<Partial<PackingItem> | null>(null);
 
-  // --- Firebase Real-time Sync ---
   useEffect(() => {
-    if (!db) {
-      setItineraryItems(DEFAULT_ITINERARY);
-      setPackingList(INITIAL_PACKING_LIST);
-      return;
-    }
+    if (!db) return;
     setIsSyncing(true);
-
     const unsubItinerary = onSnapshot(query(collection(db, "itinerary"), orderBy("time")), (snapshot) => {
       const items: ItineraryItem[] = [];
       snapshot.forEach(doc => items.push({ id: doc.id, ...doc.data() } as ItineraryItem));
-      
-      if (items.length === 0) {
-        setItineraryItems(DEFAULT_ITINERARY);
-      } else {
-        setItineraryItems(items);
-      }
+      setItineraryItems(items.length ? items : DEFAULT_ITINERARY);
       setIsSyncing(false);
     });
-
     const unsubPacking = onSnapshot(collection(db, "packingList"), (snapshot) => {
       const items: PackingItem[] = [];
       snapshot.forEach(doc => items.push({ id: doc.id, ...doc.data() } as PackingItem));
-      if (items.length > 0) {
-        setPackingList(items);
-      } else {
-        // Initial seed if empty
-        INITIAL_PACKING_LIST.forEach(async (item) => {
-          await setDoc(doc(db, "packingList", item.id), item);
-        });
-      }
+      if (items.length > 0) setPackingList(items);
     });
-
-    const unsubExpenses = onSnapshot(collection(db, "expenses"), (snapshot) => {
-      const items: Expense[] = [];
-      snapshot.forEach(doc => items.push({ id: doc.id, ...doc.data() } as Expense));
-      setExpenses(items);
-    });
-
-    return () => {
-      unsubItinerary();
-      unsubPacking();
-      unsubExpenses();
-    };
+    return () => { unsubItinerary(); unsubPacking(); };
   }, []);
 
-  // AI Inspiration
   useEffect(() => {
     const fetchAi = async () => {
       setLoadingAi(true);
-      const res = await getTaipeiSuggestions(`Day ${activeDay} of Taipei trip in Dec/Jan 2024-2025. Currently focused on local food and shopping.`);
+      const res = await getTaipeiSuggestions(`Day ${activeDay} Taipei trip.`);
       setAiSuggestion(res);
       setLoadingAi(false);
     };
-    if (activeTab === TabType.ITINERARY) {
-      fetchAi();
-    }
+    if (activeTab === TabType.ITINERARY) fetchAi();
   }, [activeDay, activeTab]);
+
+  const resetPackingList = async () => {
+    if (!confirm("確定要清除現有清單並恢復為大哥預設的 27 項物資嗎？")) return;
+    if (!db) { setPackingList(INITIAL_PACKING_LIST); return; }
+    
+    // Clear existing
+    for (const item of packingList) {
+      await deleteDoc(doc(db, "packingList", item.id));
+    }
+    // Seed new
+    for (const item of INITIAL_PACKING_LIST) {
+      await setDoc(doc(db, "packingList", item.id), item);
+    }
+    alert("已成功恢復 27 項物資！");
+  };
 
   const togglePackingItem = async (id: string) => {
     const item = packingList.find(i => i.id === id);
     if (!item) return;
     const newStatus = !item.completed;
-    if (db) {
-      await updateDoc(doc(db, "packingList", id), { completed: newStatus });
-    } else {
-      setPackingList(prev => prev.map(i => i.id === id ? { ...i, completed: newStatus } : i));
-    }
-  };
-
-  const handleOpenAdd = () => {
-    setEditingItem({ day: activeDay, time: '12:00', type: 'SIGHT', title: '', subtitle: '', location: '' });
-    setIsModalOpen(true);
-  };
-
-  const handleOpenEdit = (item: ItineraryItem) => {
-    setEditingItem(item);
-    setIsModalOpen(true);
+    if (db) await updateDoc(doc(db, "packingList", id), { completed: newStatus });
+    else setPackingList(prev => prev.map(i => i.id === id ? { ...i, completed: newStatus } : i));
   };
 
   const saveItinerary = async () => {
-    if (!editingItem || !editingItem.title) return;
-    
+    if (!editingItem?.title) return;
     if (db) {
-      const dataToSave = { ...editingItem };
-      if (dataToSave.id) {
-        const id = dataToSave.id;
-        delete dataToSave.id;
-        await updateDoc(doc(db, "itinerary", id), dataToSave);
-      } else {
-        await addDoc(collection(db, "itinerary"), dataToSave);
-      }
-    } else {
-      const newItem = { ...editingItem, id: editingItem.id || Math.random().toString() } as ItineraryItem;
-      setItineraryItems(prev => editingItem.id ? prev.map(i => i.id === editingItem.id ? newItem : i) : [...prev, newItem]);
+      const data = { ...editingItem };
+      if (data.id) { const id = data.id; delete data.id; await updateDoc(doc(db, "itinerary", id), data); }
+      else { await addDoc(collection(db, "itinerary"), data); }
     }
     setIsModalOpen(false);
-    setEditingItem(null);
-  };
-
-  const deleteItinerary = async () => {
-    if (editingItem?.id && db) {
-      await deleteDoc(doc(db, "itinerary", editingItem.id));
-      setIsModalOpen(false);
-    }
-  };
-
-  // --- Packing Functions ---
-  const handleOpenAddPacking = () => {
-    setEditingPackingItem({ name: '', assignedTo: '大哥', completed: false });
-    setIsPackingModalOpen(true);
-  };
-
-  const handleOpenEditPacking = (item: PackingItem) => {
-    setEditingPackingItem(item);
-    setIsPackingModalOpen(true);
   };
 
   const savePackingItem = async () => {
-    if (!editingPackingItem || !editingPackingItem.name) return;
-    
+    if (!editingPackingItem?.name) return;
     if (db) {
-      const dataToSave = { ...editingPackingItem };
-      if (dataToSave.id) {
-        const id = dataToSave.id;
-        delete dataToSave.id;
-        await updateDoc(doc(db, "packingList", id), dataToSave);
-      } else {
-        await addDoc(collection(db, "packingList"), dataToSave);
-      }
+      const data = { ...editingPackingItem };
+      if (data.id) { const id = data.id; delete data.id; await updateDoc(doc(db, "packingList", id), data); }
+      else { await addDoc(collection(db, "packingList"), data); }
     } else {
-      const newItem = { ...editingPackingItem, id: editingPackingItem.id || Math.random().toString() } as PackingItem;
-      setPackingList(prev => editingPackingItem.id ? prev.map(i => i.id === editingPackingItem.id ? newItem : i) : [...prev, newItem]);
+      const newItem = { ...editingPackingItem, id: editingPackingItem.id || Date.now().toString(), completed: false } as PackingItem;
+      setPackingList(prev => editingPackingItem.id ? prev.map(p => p.id === newItem.id ? newItem : p) : [...prev, newItem]);
     }
     setIsPackingModalOpen(false);
-    setEditingPackingItem(null);
   };
 
   const deletePackingItem = async () => {
@@ -270,371 +224,170 @@ const App: React.FC = () => {
     }
   };
 
-  const filteredItinerary = itineraryItems
-    .filter(i => i.day === activeDay)
-    .sort((a, b) => a.time.localeCompare(b.time));
+  const filteredItinerary = useMemo(() => 
+    itineraryItems.filter(i => i.day === activeDay).sort((a, b) => a.time.localeCompare(b.time)),
+    [itineraryItems, activeDay]
+  );
 
   const renderContent = () => {
     switch (activeTab) {
       case TabType.ITINERARY:
         return (
           <div className="pb-32 px-6">
-            <div className="flex justify-between items-center mb-6">
+            <WeatherCard day={activeDay} />
+            <div className="flex justify-between items-center mt-10 mb-6">
               <h2 className="text-2xl font-bold text-slate-800 tracking-tight">當日行程</h2>
-              <button 
-                onClick={handleOpenAdd}
-                className="flex items-center gap-1 bg-blue-600 text-white px-5 py-2.5 rounded-2xl text-sm font-bold shadow-lg shadow-blue-200 active:scale-95 transition-all"
-              >
+              <button onClick={() => { setEditingItem({ day: activeDay, time: '12:00', type: 'SIGHT' }); setIsModalOpen(true); }} className="bg-blue-600 text-white px-5 py-2.5 rounded-2xl text-sm font-bold shadow-lg flex items-center gap-1">
                 <Plus size={18} /> 新增
               </button>
             </div>
-            
             <div className="relative timeline-line">
-              {filteredItinerary.length === 0 ? (
-                <div className="py-20 text-center text-slate-400">
-                  <div className="bg-slate-100 w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4">
-                    <Calendar size={24} className="opacity-20" />
-                  </div>
-                  <p className="font-medium">呢日仲未有行程喎</p>
-                  <p className="text-xs opacity-60">撳「新增」加返啦！</p>
-                </div>
-              ) : (
-                filteredItinerary.map(item => (
-                  <TimelineCard key={item.id} item={item} onEdit={handleOpenEdit} />
-                ))
-              )}
+              {filteredItinerary.map(item => <TimelineCard key={item.id} item={item} onClick={(i) => { setViewingItem(i); setIsDetailOpen(true); }} />)}
             </div>
-
-            <div className="mt-8 p-6 bg-white rounded-[32px] border border-slate-100 shadow-sm relative overflow-hidden">
-              <div className="absolute top-0 right-0 w-32 h-32 bg-indigo-50 rounded-full -mr-16 -mt-16 opacity-50"></div>
-              <div className="flex items-center gap-2 mb-3 relative z-10">
-                <div className="bg-indigo-600 p-1.5 rounded-xl">
-                  <Search size={14} className="text-white" />
-                </div>
-                <span className="text-sm font-bold text-indigo-900">小媛嘅 AI 靈感</span>
-              </div>
-              <p className="text-sm text-slate-600 leading-relaxed italic relative z-10">
-                {loadingAi ? "正在為大哥和小媛構思中..." : aiSuggestion}
-              </p>
+            <div className="mt-8 p-6 bg-white rounded-[32px] border border-slate-100 shadow-sm">
+              <div className="flex items-center gap-2 mb-3"><div className="bg-indigo-600 p-1.5 rounded-xl"><Search size={14} className="text-white" /></div><span className="text-sm font-bold text-indigo-900">小媛嘅 AI 靈感</span></div>
+              <p className="text-sm text-slate-600 italic">{loadingAi ? "構思中..." : aiSuggestion}</p>
             </div>
           </div>
         );
-
       case TabType.PREP:
         return (
           <div className="px-6 pb-32">
             <div className="flex justify-between items-center mb-6">
               <h2 className="text-2xl font-bold text-slate-800 tracking-tight">準備清單</h2>
-              <button 
-                onClick={handleOpenAddPacking}
-                className="flex items-center gap-1 bg-blue-600 text-white px-5 py-2.5 rounded-2xl text-sm font-bold shadow-lg shadow-blue-200 active:scale-95 transition-all"
-              >
-                <Plus size={18} /> 新增項目
-              </button>
+              <div className="flex gap-2">
+                <button onClick={resetPackingList} className="bg-slate-100 text-slate-500 p-2.5 rounded-2xl hover:bg-slate-200 transition-all shadow-sm" title="重設預設清單">
+                  <RotateCcw size={18} />
+                </button>
+                <button onClick={() => { setEditingPackingItem({ name: '', assignedTo: '大哥' }); setIsPackingModalOpen(true); }} className="bg-blue-600 text-white px-5 py-2.5 rounded-2xl text-sm font-bold shadow-lg flex items-center gap-1">
+                  <Plus size={18} /> 新增
+                </button>
+              </div>
             </div>
-            
             <div className="space-y-3">
               {packingList.map(item => (
-                <div 
-                  key={item.id} 
-                  className={`flex items-center justify-between p-5 rounded-3xl border transition-all ${
-                    item.completed ? 'bg-slate-50 border-slate-100 opacity-60' : 'bg-white border-slate-100 shadow-sm'
-                  }`}
-                >
+                <div key={item.id} className={`flex items-center justify-between p-5 rounded-3xl border ${item.completed ? 'bg-slate-50 opacity-60' : 'bg-white shadow-sm'}`}>
                   <div className="flex items-center gap-4 flex-1 cursor-pointer" onClick={() => togglePackingItem(item.id)}>
-                    <div className={`w-6 h-6 rounded-xl border-2 flex items-center justify-center transition-all ${
-                      item.completed ? 'bg-green-500 border-green-500 scale-110' : 'bg-white border-slate-200'
-                    }`}>
+                    <div className={`w-6 h-6 rounded-xl border-2 flex items-center justify-center ${item.completed ? 'bg-green-500 border-green-500' : 'border-slate-200'}`}>
                       {item.completed && <CheckSquare className="text-white" size={14} />}
                     </div>
                     <div>
-                      <span className={`font-bold block ${item.completed ? 'line-through text-slate-400' : 'text-slate-700'}`}>
-                        {item.name}
-                      </span>
-                      {item.assignedTo && (
-                        <span className={`text-[10px] font-bold uppercase tracking-wider ${item.assignedTo === '大哥' ? 'text-blue-500' : 'text-pink-500'}`}>
-                          {item.assignedTo} 負責
-                        </span>
-                      )}
+                      <span className={`font-bold ${item.completed ? 'line-through text-slate-400' : 'text-slate-700'}`}>{item.name}</span>
+                      <p className={`text-[10px] font-black uppercase tracking-widest mt-0.5 ${item.assignedTo === '大哥' ? 'text-blue-500' : 'text-pink-500'}`}>{item.assignedTo} 負責</p>
                     </div>
                   </div>
-                  <button 
-                    onClick={() => handleOpenEditPacking(item)}
-                    className="p-3 text-slate-300 hover:text-blue-500 hover:bg-blue-50 rounded-2xl transition-all"
-                  >
-                    <Edit2 size={16} />
-                  </button>
+                  <button onClick={() => { setEditingPackingItem(item); setIsPackingModalOpen(true); }} className="p-2 text-slate-300 hover:text-blue-500"><Edit2 size={16}/></button>
                 </div>
               ))}
             </div>
           </div>
         );
-
-      case TabType.LEDGER:
-        const total = expenses.reduce((acc, curr) => acc + curr.amount, 0);
-        return (
-          <div className="px-6 pb-32">
-            <h2 className="text-2xl font-bold text-slate-800 mb-2">開支統計</h2>
-            <div className="bg-gradient-to-br from-indigo-600 to-blue-700 p-8 rounded-[40px] text-white shadow-xl shadow-indigo-100 mb-10">
-              <p className="text-indigo-100 text-sm mb-1 opacity-80 font-medium">總支出 (TWD)</p>
-              <h3 className="text-4xl font-extrabold">$ {total.toLocaleString()}</h3>
-            </div>
-            
-            <div className="flex justify-between items-center mb-6">
-              <span className="font-bold text-slate-700 text-lg">最近交易</span>
-              <button 
-                onClick={() => alert('此功能即將推出！')}
-                className="bg-white px-4 py-2 rounded-2xl shadow-sm border border-slate-100 text-indigo-600 text-sm font-bold flex items-center gap-1.5"
-              >
-                <Plus size={16} /> 新增紀錄
-              </button>
-            </div>
-
-            {expenses.length === 0 ? (
-              <div className="text-center py-20 bg-white rounded-[40px] border border-dashed border-slate-200">
-                <Wallet size={48} className="mx-auto mb-4 text-slate-200" />
-                <p className="text-slate-400 font-medium">仲未有任何開支</p>
-              </div>
-            ) : (
-              <div className="space-y-4">
-                {expenses.map(exp => (
-                  <div key={exp.id} className="bg-white p-5 rounded-[28px] border border-slate-50 shadow-sm flex justify-between items-center">
-                    <div>
-                      <p className="font-bold text-slate-800">{exp.description}</p>
-                      <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-0.5">{exp.paidBy} • {exp.date}</p>
-                    </div>
-                    <p className="font-extrabold text-rose-500">-${exp.amount}</p>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        );
-
-      case TabType.MEMBERS:
-        return (
-          <div className="px-6 pb-32">
-             <h2 className="text-2xl font-bold text-slate-800 mb-6">旅遊成員</h2>
-             <div className="grid grid-cols-1 gap-4">
-               {MEMBERS.map(member => (
-                 <div key={member.name} className="bg-white p-6 rounded-[32px] border border-slate-100 shadow-sm flex items-center gap-4">
-                   <img src={member.avatar} alt={member.name} className="w-16 h-16 rounded-3xl object-cover ring-4 ring-slate-50" />
-                   <div>
-                     <h3 className="text-lg font-bold text-slate-800">{member.name}</h3>
-                     <p className="text-sm text-blue-500 font-bold">{member.role}</p>
-                   </div>
-                 </div>
-               ))}
-             </div>
-          </div>
-        );
-
-      default:
-        return null;
+      default: return <div className="p-10 text-center text-slate-400">分頁開發中...</div>;
     }
   };
 
   return (
     <div className="max-w-md mx-auto min-h-screen relative flex flex-col bg-slate-50 overflow-x-hidden">
-      {/* --- Modal for Itinerary --- */}
-      {isModalOpen && (
-        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-md z-[100] flex items-end sm:items-center justify-center p-4">
-          <div className="bg-white w-full max-w-sm rounded-[48px] p-8 shadow-2xl animate-in slide-in-from-bottom duration-500">
-            <div className="flex justify-between items-center mb-8">
-              <h3 className="text-2xl font-black text-slate-800 tracking-tight">{editingItem?.id ? '修改行程' : '新增行程'}</h3>
-              <button onClick={() => setIsModalOpen(false)} className="p-3 bg-slate-100 rounded-2xl text-slate-500 hover:bg-slate-200 transition-colors"><X size={20}/></button>
+      
+      {/* Detail Modal */}
+      {isDetailOpen && viewingItem && (
+        <div className="fixed inset-0 bg-slate-900/80 backdrop-blur-xl z-[110] flex items-end justify-center">
+          <div className="bg-white w-full rounded-t-[50px] p-8 pb-12 shadow-2xl animate-in slide-in-from-bottom duration-300 max-h-[90vh] overflow-y-auto">
+            <div className="flex justify-between items-start mb-6">
+              <div>
+                <span className="bg-blue-50 text-blue-600 px-3 py-1 rounded-full text-[10px] font-black mb-2 inline-block">Day {viewingItem.day} • {viewingItem.time}</span>
+                <h3 className="text-3xl font-black text-slate-900 leading-tight">{viewingItem.title}</h3>
+                <p className="text-slate-500 font-bold mt-1">{viewingItem.subtitle}</p>
+              </div>
+              <button onClick={() => setIsDetailOpen(false)} className="p-3 bg-slate-100 rounded-2xl text-slate-500"><X size={20}/></button>
             </div>
-            
-            <div className="space-y-5">
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="text-[11px] uppercase font-black text-slate-400 ml-2 mb-2 block tracking-widest">時間</label>
-                  <input 
-                    type="time" 
-                    value={editingItem?.time} 
-                    onChange={e => setEditingItem({...editingItem!, time: e.target.value})}
-                    className="w-full bg-slate-100 border-none rounded-2xl px-5 py-4 text-slate-800 font-bold focus:ring-2 focus:ring-blue-500"
-                  />
+            <div className="space-y-6">
+              {viewingItem.location && (
+                <div className="bg-slate-50 p-6 rounded-[32px] border border-slate-100">
+                  <div className="flex items-center gap-2 mb-2 text-slate-400 font-black text-[10px] uppercase tracking-widest"><MapPin size={14}/> 地點</div>
+                  <p className="text-slate-800 font-bold mb-4">{viewingItem.location}</p>
+                  <a href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(viewingItem.location)}`} target="_blank" rel="noreferrer" className="w-full bg-white text-blue-600 border border-blue-100 py-4 rounded-[24px] font-black flex items-center justify-center gap-2 shadow-sm">
+                    <Navigation size={18}/> Google Maps 導航
+                  </a>
                 </div>
-                <div>
-                  <label className="text-[11px] uppercase font-black text-slate-400 ml-2 mb-2 block tracking-widest">類別</label>
-                  <select 
-                    value={editingItem?.type}
-                    onChange={e => setEditingItem({...editingItem!, type: e.target.value as any})}
-                    className="w-full bg-slate-100 border-none rounded-2xl px-5 py-4 text-slate-800 font-bold focus:ring-2 focus:ring-blue-500"
-                  >
-                    <option value="SIGHT">景點</option>
-                    <option value="FOOD">美食</option>
-                    <option value="TRANSPORT">交通</option>
-                    <option value="FLIGHT">航班</option>
-                    <option value="HOTEL">酒店</option>
-                  </select>
-                </div>
-              </div>
-
-              <div>
-                <label className="text-[11px] uppercase font-black text-slate-400 ml-2 mb-2 block tracking-widest">行程標題</label>
-                <input 
-                  type="text" 
-                  placeholder="例如：大腕燒肉"
-                  value={editingItem?.title} 
-                  onChange={e => setEditingItem({...editingItem!, title: e.target.value})}
-                  className="w-full bg-slate-100 border-none rounded-2xl px-5 py-4 text-slate-800 font-bold focus:ring-2 focus:ring-blue-500 placeholder:text-slate-300"
-                />
-              </div>
-
-              <div>
-                <label className="text-[11px] uppercase font-black text-slate-400 ml-2 mb-2 block tracking-widest">地點 / 地址</label>
-                <input 
-                  type="text" 
-                  placeholder="輸入地址或座標"
-                  value={editingItem?.location || ''} 
-                  onChange={e => setEditingItem({...editingItem!, location: e.target.value})}
-                  className="w-full bg-slate-100 border-none rounded-2xl px-5 py-4 text-slate-800 font-bold focus:ring-2 focus:ring-blue-500 placeholder:text-slate-300"
-                />
-              </div>
-
-              <div>
-                <label className="text-[11px] uppercase font-black text-slate-400 ml-2 mb-2 block tracking-widest">備註 / 訂金</label>
-                <input 
-                  type="text" 
-                  placeholder="例如：已付訂金 $2000"
-                  value={editingItem?.subtitle || ''} 
-                  onChange={e => setEditingItem({...editingItem!, subtitle: e.target.value})}
-                  className="w-full bg-slate-100 border-none rounded-2xl px-5 py-4 text-slate-800 font-bold focus:ring-2 focus:ring-blue-500 placeholder:text-slate-300"
-                />
-              </div>
-              
-              <div className="flex gap-4 pt-6">
-                {editingItem?.id && (
-                  <button onClick={deleteItinerary} className="flex-1 bg-rose-50 text-rose-500 py-5 rounded-[24px] font-black tracking-wide active:scale-95 transition-all">刪除</button>
-                )}
-                <button onClick={saveItinerary} className="flex-[2] bg-blue-600 text-white py-5 rounded-[24px] font-black tracking-wide shadow-xl shadow-blue-100 flex items-center justify-center gap-2 active:scale-95 transition-all">
-                  <Save size={20}/> 儲存行程
+              )}
+              <div className="bg-slate-50 p-6 rounded-[32px] border border-slate-100">
+                <div className="flex items-center gap-2 mb-4 text-slate-400 font-black text-[10px] uppercase tracking-widest"><ImageIcon size={14}/> 旅遊相簿</div>
+                <button className="w-full aspect-video bg-slate-200 rounded-3xl flex flex-col items-center justify-center border-2 border-dashed border-slate-300 text-slate-400 hover:text-blue-500 transition-all">
+                  <Plus size={32}/>
+                  <span className="text-xs font-bold mt-2">上傳照片</span>
                 </button>
+              </div>
+              <button onClick={() => { setEditingItem(viewingItem); setIsDetailOpen(false); setIsModalOpen(true); }} className="w-full bg-blue-600 text-white py-5 rounded-[24px] font-black shadow-xl shadow-blue-100 active:scale-95 transition-all">修改行程內容</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Packing Modal */}
+      {isPackingModalOpen && editingPackingItem && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-md z-[120] flex items-center justify-center p-4">
+          <div className="bg-white w-full max-w-sm rounded-[48px] p-8 shadow-2xl">
+            <div className="flex justify-between items-center mb-6">
+              <h3 className="text-2xl font-black text-slate-800 tracking-tight">{editingPackingItem.id ? '修改物資' : '新增物資'}</h3>
+              <button onClick={() => setIsPackingModalOpen(false)}><X size={24}/></button>
+            </div>
+            <div className="space-y-4">
+              <input type="text" placeholder="物資名稱" value={editingPackingItem.name} onChange={e => setEditingPackingItem({...editingPackingItem, name: e.target.value})} className="w-full bg-slate-100 border-none rounded-2xl p-4 font-bold" />
+              <div className="grid grid-cols-2 gap-2">
+                {MEMBERS.map(m => (
+                  <button key={m.name} onClick={() => setEditingPackingItem({...editingPackingItem, assignedTo: m.name})} className={`py-3 rounded-xl font-bold transition-all ${editingPackingItem.assignedTo === m.name ? 'bg-blue-600 text-white shadow-lg' : 'bg-slate-100 text-slate-400'}`}>{m.name}</button>
+                ))}
+              </div>
+              <div className="flex gap-2 pt-4">
+                {editingPackingItem.id && <button onClick={deletePackingItem} className="flex-1 bg-rose-50 text-rose-500 py-4 rounded-2xl font-black"><Trash2 size={20} className="mx-auto"/></button>}
+                <button onClick={savePackingItem} className="flex-[3] bg-blue-600 text-white py-4 rounded-2xl font-black shadow-lg">儲存</button>
               </div>
             </div>
           </div>
         </div>
       )}
 
-      {/* --- Modal for Packing --- */}
-      {isPackingModalOpen && (
-        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-md z-[100] flex items-end sm:items-center justify-center p-4">
-          <div className="bg-white w-full max-w-sm rounded-[48px] p-8 shadow-2xl animate-in slide-in-from-bottom duration-500">
-            <div className="flex justify-between items-center mb-8">
-              <h3 className="text-2xl font-black text-slate-800 tracking-tight">{editingPackingItem?.id ? '修改物資' : '新增物資'}</h3>
-              <button onClick={() => setIsPackingModalOpen(false)} className="p-3 bg-slate-100 rounded-2xl text-slate-500 hover:bg-slate-200 transition-colors"><X size={20}/></button>
-            </div>
-            
-            <div className="space-y-5">
-              <div>
-                <label className="text-[11px] uppercase font-black text-slate-400 ml-2 mb-2 block tracking-widest">物品名稱</label>
-                <input 
-                  type="text" 
-                  placeholder="例如：悠遊卡"
-                  value={editingPackingItem?.name} 
-                  onChange={e => setEditingPackingItem({...editingPackingItem!, name: e.target.value})}
-                  className="w-full bg-slate-100 border-none rounded-2xl px-5 py-4 text-slate-800 font-bold focus:ring-2 focus:ring-blue-500 placeholder:text-slate-300"
-                />
-              </div>
-
-              <div>
-                <label className="text-[11px] uppercase font-black text-slate-400 ml-2 mb-2 block tracking-widest">負責人</label>
-                <div className="grid grid-cols-2 gap-3">
-                  {MEMBERS.map(m => (
-                    <button 
-                      key={m.name}
-                      onClick={() => setEditingPackingItem({...editingPackingItem!, assignedTo: m.name})}
-                      className={`py-4 rounded-2xl font-bold transition-all ${
-                        editingPackingItem?.assignedTo === m.name 
-                        ? 'bg-blue-600 text-white shadow-lg shadow-blue-100' 
-                        : 'bg-slate-100 text-slate-400'
-                      }`}
-                    >
-                      {m.name}
-                    </button>
-                  ))}
-                </div>
-              </div>
-              
-              <div className="flex gap-4 pt-6">
-                {editingPackingItem?.id && (
-                  <button onClick={deletePackingItem} className="flex-1 bg-rose-50 text-rose-500 py-5 rounded-[24px] font-black tracking-wide active:scale-95 transition-all">刪除</button>
-                )}
-                <button onClick={savePackingItem} className="flex-[2] bg-blue-600 text-white py-5 rounded-[24px] font-black tracking-wide shadow-xl shadow-blue-100 flex items-center justify-center gap-2 active:scale-95 transition-all">
-                  <Save size={20}/> 儲存
-                </button>
-              </div>
+      {/* Itinerary Edit Modal (Simplified) */}
+      {isModalOpen && editingItem && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-md z-[120] flex items-center justify-center p-4">
+          <div className="bg-white w-full max-w-sm rounded-[48px] p-8 shadow-2xl">
+            <div className="flex justify-between items-center mb-6"><h3 className="text-2xl font-black text-slate-800">編輯行程</h3><button onClick={() => setIsModalOpen(false)}><X size={24}/></button></div>
+            <div className="space-y-4">
+              <input type="time" value={editingItem.time} onChange={e => setEditingItem({...editingItem, time: e.target.value})} className="w-full bg-slate-100 border-none rounded-2xl p-4 font-bold" />
+              <input type="text" placeholder="標題" value={editingItem.title || ''} onChange={e => setEditingItem({...editingItem, title: e.target.value})} className="w-full bg-slate-100 border-none rounded-2xl p-4 font-bold" />
+              <input type="text" placeholder="地點" value={editingItem.location || ''} onChange={e => setEditingItem({...editingItem, location: e.target.value})} className="w-full bg-slate-100 border-none rounded-2xl p-4 font-bold" />
+              <button onClick={saveItinerary} className="w-full bg-blue-600 text-white py-4 rounded-2xl font-black shadow-xl">儲存</button>
             </div>
           </div>
         </div>
       )}
 
-      {/* --- Header --- */}
-      <header className="pt-12 pb-8 px-6 bg-white rounded-b-[50px] shadow-sm mb-8 sticky top-0 z-30 ring-1 ring-slate-100">
-        <div className="flex justify-between items-start mb-8">
-          <div>
-            <div className="flex items-center gap-2 mb-1">
-              <h1 className="text-3xl font-black text-slate-900 tracking-tighter">Taipei 2025</h1>
-              <div className={`w-2.5 h-2.5 rounded-full ${db ? 'bg-green-500 sync-active' : 'bg-rose-400 opacity-50'}`}></div>
-            </div>
-            <p className="text-slate-400 text-sm font-bold flex items-center gap-1.5 uppercase tracking-widest">
-              <Users size={14} /> 大哥 & 小媛
-            </p>
-          </div>
-          <div className="flex flex-col items-end">
-            <div className="p-3 bg-blue-50 rounded-2xl text-blue-600">
-              {isSyncing ? <RefreshCw size={24} className="animate-spin" /> : <CloudSun size={24} />}
-            </div>
-          </div>
+      {/* Header */}
+      <header className="pt-12 pb-8 px-6 bg-white rounded-b-[50px] shadow-sm mb-4 sticky top-0 z-30 ring-1 ring-slate-100">
+        <div className="flex justify-between items-start mb-6">
+          <div><div className="flex items-center gap-2 mb-2"><h1 className="text-3xl font-black text-slate-900 tracking-tighter">Taipei 2025</h1><div className={`w-2 h-2 rounded-full ${db ? 'bg-green-500 sync-active' : 'bg-slate-300'}`}></div></div><CountdownTimer /></div>
+          <div className="p-3 bg-blue-50 rounded-2xl text-blue-600">{isSyncing ? <RefreshCw size={20} className="animate-spin" /> : <CloudSun size={20} />}</div>
         </div>
-
-        {/* Day Selector */}
-        <div className="flex gap-4 overflow-x-auto custom-scrollbar py-4 -mx-6 px-6">
+        <div className="flex gap-4 overflow-x-auto custom-scrollbar py-2 -mx-6 px-6">
           {TRAVEL_DATES.map(date => (
-            <div 
-              key={date.day} 
-              onClick={() => setActiveDay(date.day)}
-              className={`flex-shrink-0 flex flex-col items-center justify-center w-[72px] h-[92px] rounded-[28px] transition-all duration-300 cursor-pointer ${
-                activeDay === date.day 
-                ? 'bg-blue-600 text-white shadow-xl shadow-blue-200 -translate-y-1 scale-105' 
-                : 'bg-slate-50 text-slate-400 border border-slate-100 hover:bg-slate-100'
-              }`}
-            >
-              <span className={`text-[10px] uppercase font-black mb-1 ${activeDay === date.day ? 'text-blue-200' : 'text-slate-300'}`}>D{date.day}</span>
-              <span className="text-2xl font-black leading-none mb-1">{date.label.split('/')[1]}</span>
-              <span className="text-[10px] font-black opacity-80">{date.weekday}</span>
+            <div key={date.day} onClick={() => setActiveDay(date.day)} className={`flex-shrink-0 flex flex-col items-center justify-center w-[68px] h-[86px] rounded-[24px] transition-all duration-300 cursor-pointer ${activeDay === date.day ? 'bg-blue-600 text-white shadow-lg -translate-y-1' : 'bg-slate-50 text-slate-400 border border-slate-100'}`}>
+              <span className="text-[10px] font-black mb-1 opacity-70">D{date.day}</span>
+              <span className="text-xl font-black leading-none mb-1">{date.label.split('/')[1]}</span>
+              <span className="text-[10px] font-black">{date.weekday}</span>
             </div>
           ))}
-          <div className="flex-shrink-0 w-2 h-1"></div>
         </div>
       </header>
 
-      {/* --- Content --- */}
-      <main className="flex-1 overflow-y-auto">
-        {renderContent()}
-      </main>
+      <main className="flex-1 overflow-y-auto">{renderContent()}</main>
 
-      {/* --- Navigation --- */}
-      <nav className="fixed bottom-8 left-8 right-8 h-20 bg-white/90 backdrop-blur-2xl rounded-[35px] border border-white/50 shadow-[0_20px_50px_rgba(0,0,0,0.15)] z-40 flex items-center justify-around px-6">
-        {[
-          { type: TabType.ITINERARY, label: '行程' },
-          { type: TabType.LEDGER, label: '記帳' },
-          { type: TabType.PREP, label: '清單' },
-          { type: TabType.MEMBERS, label: '成員' }
-        ].map((tab) => (
-          <button 
-            key={tab.type} 
-            onClick={() => setActiveTab(tab.type)}
-            className="flex flex-col items-center gap-1 transition-all active:scale-75"
-          >
-            <TabIcon type={tab.type} active={activeTab === tab.type} />
-            <span className={`text-[10px] font-black tracking-tighter transition-colors uppercase ${
-              activeTab === tab.type ? 'text-blue-600' : 'text-slate-400'
-            }`}>
-              {tab.label}
-            </span>
+      {/* Navigation */}
+      <nav className="fixed bottom-8 left-8 right-8 h-20 bg-white/90 backdrop-blur-2xl rounded-[35px] border border-white/50 shadow-xl z-40 flex items-center justify-around px-6">
+        {[TabType.ITINERARY, TabType.LEDGER, TabType.PREP, TabType.MEMBERS].map(type => (
+          <button key={type} onClick={() => setActiveTab(type)} className="flex flex-col items-center gap-1 transition-all active:scale-75">
+            <TabIcon type={type} active={activeTab === type} />
+            <span className={`text-[10px] font-black uppercase ${activeTab === type ? 'text-blue-600' : 'text-slate-400'}`}>{type === TabType.ITINERARY ? '行程' : type === TabType.LEDGER ? '記帳' : type === TabType.PREP ? '清單' : '成員'}</span>
           </button>
         ))}
       </nav>

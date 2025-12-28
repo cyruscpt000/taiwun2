@@ -1,7 +1,7 @@
 
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { TabType, ItineraryItem, Expense, PackingItem, Member } from './types';
-import { MEMBERS, INITIAL_PACKING_LIST, TRAVEL_DATES, DEFAULT_ITINERARY } from './constants';
+import { MEMBERS as INITIAL_MEMBERS, INITIAL_PACKING_LIST, TRAVEL_DATES, DEFAULT_ITINERARY } from './constants';
 import { 
   Calendar, 
   Info, 
@@ -38,7 +38,8 @@ import {
   Coins,
   TrendingUp,
   CreditCard,
-  User as UserIcon
+  User as UserIcon,
+  Upload
 } from 'lucide-react';
 import { getTaipeiSuggestions } from './geminiService';
 import { db } from './firebase';
@@ -148,23 +149,24 @@ const TimelineCard: React.FC<{ item: ItineraryItem; onClick: (item: ItineraryIte
 const App: React.FC = () => {
   const [activeTab, setActiveTab] = useState<TabType>(TabType.ITINERARY);
   const [activeDay, setActiveDay] = useState<number>(1);
-  const [currentUser, setCurrentUser] = useState<Member>(MEMBERS[0]); // Default to Dage
+  const [members, setMembers] = useState<Member[]>(INITIAL_MEMBERS);
+  const [currentMemberName, setCurrentMemberName] = useState<string>(INITIAL_MEMBERS[0].name);
+  
+  const currentUser = useMemo(() => members.find(m => m.name === currentMemberName) || members[0], [members, currentMemberName]);
   
   const [itineraryItems, setItineraryItems] = useState<ItineraryItem[]>([]);
   const [packingList, setPackingList] = useState<PackingItem[]>([]);
   const [expenses, setExpenses] = useState<Expense[]>([]);
   const [isSyncing, setIsSyncing] = useState(false);
 
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
   // Modals
-  const [isModalOpen, setIsModalOpen] = useState(false);
-  const [isDetailOpen, setIsDetailOpen] = useState(false);
-  const [isPackingModalOpen, setIsPackingModalOpen] = useState(false);
+  const [isItineraryModalOpen, setIsItineraryModalOpen] = useState(false);
+  const [editingItinerary, setEditingItinerary] = useState<Partial<ItineraryItem> | null>(null);
   const [isCurrencyModalOpen, setIsCurrencyModalOpen] = useState(false);
   const [isExpenseModalOpen, setIsExpenseModalOpen] = useState(false);
   
-  const [editingItem, setEditingItem] = useState<Partial<ItineraryItem> | null>(null);
-  const [viewingItem, setViewingItem] = useState<ItineraryItem | null>(null);
-  const [editingPackingItem, setEditingPackingItem] = useState<Partial<PackingItem> | null>(null);
   const [newExpense, setNewExpense] = useState<Partial<Expense>>({
     amount: 0,
     category: '食飯',
@@ -173,12 +175,49 @@ const App: React.FC = () => {
     date: new Date().toISOString().split('T')[0]
   });
 
-  // Keep expense form updated with current user
+  // Sync Logic
+  useEffect(() => {
+    if (!db) return;
+    setIsSyncing(true);
+
+    const unsubMembers = onSnapshot(collection(db, "members"), (snapshot) => {
+      const items: Member[] = [];
+      snapshot.forEach(doc => items.push({ ...doc.data() } as Member));
+      if (items.length) {
+        setMembers(items);
+      } else {
+        INITIAL_MEMBERS.forEach(m => setDoc(doc(db, "members", m.name), m));
+      }
+    });
+
+    const unsubItinerary = onSnapshot(query(collection(db, "itinerary"), orderBy("time")), (snapshot) => {
+      const items: ItineraryItem[] = [];
+      snapshot.forEach(doc => items.push({ id: doc.id, ...doc.data() } as ItineraryItem));
+      // Sort and filter handled by useMemo for display
+      setItineraryItems(items.length ? items : DEFAULT_ITINERARY);
+      setIsSyncing(false);
+    });
+
+    const unsubPacking = onSnapshot(collection(db, "packingList"), (snapshot) => {
+      const items: PackingItem[] = [];
+      snapshot.forEach(doc => items.push({ id: doc.id, ...doc.data() } as PackingItem));
+      setPackingList(items);
+    });
+
+    const unsubExpenses = onSnapshot(query(collection(db, "expenses"), orderBy("date", "desc")), (snapshot) => {
+      const items: Expense[] = [];
+      snapshot.forEach(doc => items.push({ id: doc.id, ...doc.data() } as Expense));
+      setExpenses(items);
+    });
+
+    return () => { unsubMembers(); unsubItinerary(); unsubPacking(); unsubExpenses(); };
+  }, []);
+
   useEffect(() => {
     setNewExpense(prev => ({ ...prev, paidBy: currentUser.name }));
   }, [currentUser]);
 
-  // Currency Converter State
+  // Currency Converter Logic
   const [twdInput, setTwdInput] = useState<string>("100");
   const [hkdOutput, setHkdOutput] = useState<string>("");
   const [rate, setRate] = useState<number>(4.1);
@@ -188,32 +227,10 @@ const App: React.FC = () => {
     setHkdOutput((twd / rate).toFixed(2));
   }, [twdInput, rate]);
 
-  // Sync Logic
-  useEffect(() => {
-    if (!db) return;
-    setIsSyncing(true);
-    const unsubItinerary = onSnapshot(query(collection(db, "itinerary"), orderBy("time")), (snapshot) => {
-      const items: ItineraryItem[] = [];
-      snapshot.forEach(doc => items.push({ id: doc.id, ...doc.data() } as ItineraryItem));
-      setItineraryItems(items.length ? items : DEFAULT_ITINERARY);
-      setIsSyncing(false);
-    });
-    const unsubPacking = onSnapshot(collection(db, "packingList"), (snapshot) => {
-      const items: PackingItem[] = [];
-      snapshot.forEach(doc => items.push({ id: doc.id, ...doc.data() } as PackingItem));
-      setPackingList(items);
-    });
-    const unsubExpenses = onSnapshot(query(collection(db, "expenses"), orderBy("date", "desc")), (snapshot) => {
-      const items: Expense[] = [];
-      snapshot.forEach(doc => items.push({ id: doc.id, ...doc.data() } as Expense));
-      setExpenses(items);
-    });
-    return () => { unsubItinerary(); unsubPacking(); unsubExpenses(); };
-  }, []);
-
   const totalTwd = useMemo(() => expenses.reduce((sum, e) => sum + (e.amount || 0), 0), [expenses]);
   const totalHkd = useMemo(() => (totalTwd / rate).toFixed(1), [totalTwd, rate]);
 
+  // Functions
   const saveExpense = async () => {
     if (!newExpense.amount || !newExpense.description) return;
     if (db) {
@@ -227,23 +244,52 @@ const App: React.FC = () => {
     setNewExpense({ amount: 0, category: '食飯', description: '', paidBy: currentUser.name, date: new Date().toISOString().split('T')[0] });
   };
 
+  const saveItinerary = async () => {
+    if (!editingItinerary?.title || !editingItinerary?.time) return;
+    if (db) {
+      const itemData = {
+        ...editingItinerary,
+        day: activeDay,
+        updatedAt: new Date()
+      };
+      if (editingItinerary.id) {
+        await updateDoc(doc(db, "itinerary", editingItinerary.id), itemData);
+      } else {
+        await addDoc(collection(db, "itinerary"), itemData);
+      }
+    }
+    setIsItineraryModalOpen(false);
+    setEditingItinerary(null);
+  };
+
+  const deleteItinerary = async () => {
+    if (editingItinerary?.id && db) {
+      if (confirm("真係要刪除呢個行程？")) {
+        await deleteDoc(doc(db, "itinerary", editingItinerary.id));
+        setIsItineraryModalOpen(false);
+        setEditingItinerary(null);
+      }
+    }
+  };
+
+  const handleAvatarUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onloadend = async () => {
+      const base64String = reader.result as string;
+      if (db) {
+        await updateDoc(doc(db, "members", currentUser.name), { avatar: base64String });
+      }
+    };
+    reader.readAsDataURL(file);
+  };
+
   const deleteExpense = async (id: string) => {
     if (db && confirm("確定要刪除呢筆數？")) {
       await deleteDoc(doc(db, "expenses", id));
     }
-  };
-
-  const resetPackingList = async () => {
-    if (!confirm("要導入物資嗎？🌿")) return;
-    setIsSyncing(true);
-    try {
-      if (db) {
-        for (const item of INITIAL_PACKING_LIST) {
-          const exists = packingList.some(p => p.name === item.name);
-          if (!exists) await setDoc(doc(db, "packingList", item.id), item);
-        }
-      }
-    } catch (e) { console.error(e); } finally { setIsSyncing(false); }
   };
 
   const togglePackingItem = async (id: string) => {
@@ -261,7 +307,9 @@ const App: React.FC = () => {
   return (
     <div className="max-w-md mx-auto min-h-screen relative flex flex-col bg-[#FCF6E5] overflow-x-hidden font-sans paper-texture pb-32">
       
-      {/* Currency Converter Modal */}
+      <input type="file" ref={fileInputRef} onChange={handleAvatarUpload} accept="image/*" className="hidden" />
+
+      {/* Currency Modal */}
       {isCurrencyModalOpen && (
         <div className="fixed inset-0 bg-[#4E342E]/40 backdrop-blur-sm z-[150] flex items-center justify-center p-6">
           <div className="bg-white w-full rounded-[50px] p-8 shadow-[0_20px_0_#EEDEB0] border-4 border-[#EEDEB0] animate-in zoom-in-95 duration-200">
@@ -278,10 +326,6 @@ const App: React.FC = () => {
                 <div className="bg-[#F1F8E9] p-6 rounded-[35px] border-2 border-[#C5E1A5]">
                    <p className="text-[10px] font-black uppercase text-[#689F38] mb-2 tracking-widest text-center">港幣 HKD</p>
                    <div className="text-3xl font-black text-[#689F38] text-center">$ {hkdOutput}</div>
-                </div>
-                <div className="pt-4">
-                   <div className="flex justify-between items-center text-xs font-bold text-[#A1887F] mb-2 px-2"><span>匯率 1 HKD = {rate} TWD</span></div>
-                   <input type="range" min="3.5" max="4.5" step="0.01" value={rate} onChange={e => setRate(parseFloat(e.target.value))} className="w-full h-3 bg-[#EEDEB0] rounded-lg appearance-none cursor-pointer accent-[#8DB359]" />
                 </div>
              </div>
              <button onClick={() => setIsCurrencyModalOpen(false)} className="w-full bg-[#4E342E] text-white py-5 rounded-[30px] font-black mt-8 shadow-lg active:translate-y-1 transition-all">好啦！</button>
@@ -306,24 +350,68 @@ const App: React.FC = () => {
                    <label className="text-[10px] font-black uppercase text-[#A1887F] mb-1 block">項目描述</label>
                    <input type="text" value={newExpense.description} onChange={e => setNewExpense({...newExpense, description: e.target.value})} placeholder="例如：大稻埕魯肉飯" className="bg-transparent border-none p-0 text-lg font-bold text-[#4E342E] w-full focus:ring-0" />
                 </div>
+             </div>
+             <button onClick={saveExpense} className="w-full bg-[#8DB359] text-white py-5 rounded-[30px] font-black mt-8 shadow-lg active:scale-95 transition-all">記低佢！🌿</button>
+          </div>
+        </div>
+      )}
+
+      {/* Itinerary Modal (Add/Edit) */}
+      {isItineraryModalOpen && (
+        <div className="fixed inset-0 bg-[#4E342E]/50 backdrop-blur-sm z-[150] flex items-center justify-center p-6">
+          <div className="bg-white w-full max-w-md rounded-[50px] p-8 border-4 border-[#EEDEB0] shadow-2xl animate-in zoom-in-95 duration-200 overflow-y-auto max-h-[90vh]">
+             <div className="flex justify-between items-center mb-6">
+                <h3 className="text-2xl font-black text-[#4E342E]">{editingItinerary?.id ? '修改行程 ✍️' : '新增冒險 🗺️'}</h3>
+                <button onClick={() => { setIsItineraryModalOpen(false); setEditingItinerary(null); }} className="p-2 bg-slate-50 rounded-full"><X size={20}/></button>
+             </div>
+             
+             <div className="space-y-4">
+                <div className="bg-[#FFF9E5] p-5 rounded-[30px] border-2 border-[#EEDEB0]">
+                   <label className="text-[10px] font-black uppercase text-[#A1887F] mb-1 block">行程標題</label>
+                   <input type="text" value={editingItinerary?.title || ''} onChange={e => setEditingItinerary({...editingItinerary, title: e.target.value})} placeholder="要去邊度玩？" className="bg-transparent border-none p-0 text-xl font-black text-[#4E342E] w-full focus:ring-0" />
+                </div>
+                
                 <div className="grid grid-cols-2 gap-4">
                   <div className="bg-white p-4 rounded-[25px] border-2 border-[#EEDEB0]">
-                     <label className="text-[10px] font-black uppercase text-[#A1887F] mb-2 block">邊個畀錢?</label>
-                     <div className="flex gap-2">
-                        {MEMBERS.map(p => (
-                          <button key={p.name} onClick={() => setNewExpense({...newExpense, paidBy: p.name})} className={`flex-1 py-2 rounded-xl text-xs font-black border-2 transition-all ${newExpense.paidBy === p.name ? 'bg-[#8DB359] border-[#8DB359] text-white shadow-md' : 'border-[#EEDEB0] text-[#A1887F]'}`}>{p.name}</button>
-                        ))}
-                     </div>
+                     <label className="text-[10px] font-black uppercase text-[#A1887F] mb-2 block">時間</label>
+                     <input type="time" value={editingItinerary?.time || ''} onChange={e => setEditingItinerary({...editingItinerary, time: e.target.value})} className="bg-transparent border-none p-0 text-lg font-bold text-[#4E342E] w-full focus:ring-0" />
                   </div>
                   <div className="bg-white p-4 rounded-[25px] border-2 border-[#EEDEB0]">
                      <label className="text-[10px] font-black uppercase text-[#A1887F] mb-2 block">類別</label>
-                     <select value={newExpense.category} onChange={e => setNewExpense({...newExpense, category: e.target.value})} className="w-full bg-transparent border-none p-0 text-sm font-bold text-[#4E342E] focus:ring-0">
-                        {['食飯', '交通', '購物', '景點', '住宿', '其他'].map(c => <option key={c} value={c}>{c}</option>)}
+                     <select value={editingItinerary?.type || 'SIGHT'} onChange={e => setEditingItinerary({...editingItinerary, type: e.target.value as any})} className="w-full bg-transparent border-none p-0 text-sm font-bold text-[#4E342E] focus:ring-0">
+                        <option value="SIGHT">📸 景點</option>
+                        <option value="FOOD">🍱 嘢食</option>
+                        <option value="TRANSPORT">🚌 交通</option>
+                        <option value="FLIGHT">✈️ 飛機</option>
+                        <option value="HOTEL">🏨 住宿</option>
                      </select>
                   </div>
                 </div>
+
+                <div className="bg-white p-5 rounded-[30px] border-2 border-[#EEDEB0]">
+                   <label className="text-[10px] font-black uppercase text-[#A1887F] mb-1 block">地點 (Google Map 用)</label>
+                   <div className="flex items-center gap-2">
+                      <MapPin size={18} className="text-[#A1887F]" />
+                      <input type="text" value={editingItinerary?.location || ''} onChange={e => setEditingItinerary({...editingItinerary, location: e.target.value})} placeholder="例如：西門町" className="bg-transparent border-none p-0 text-base font-bold text-[#4E342E] w-full focus:ring-0" />
+                   </div>
+                </div>
+
+                <div className="bg-white p-5 rounded-[30px] border-2 border-[#EEDEB0]">
+                   <label className="text-[10px] font-black uppercase text-[#A1887F] mb-1 block">備註 / 副標題</label>
+                   <input type="text" value={editingItinerary?.subtitle || ''} onChange={e => setEditingItinerary({...editingItinerary, subtitle: e.target.value})} placeholder="例如：記得帶遮" className="bg-transparent border-none p-0 text-base font-bold text-[#4E342E] w-full focus:ring-0" />
+                </div>
              </div>
-             <button onClick={saveExpense} className="w-full bg-[#8DB359] text-white py-5 rounded-[30px] font-black mt-8 shadow-lg active:scale-95 transition-all">記低佢！🌿</button>
+
+             <div className="flex gap-4 mt-8">
+                {editingItinerary?.id && (
+                   <button onClick={deleteItinerary} className="flex-1 bg-rose-50 text-rose-500 py-5 rounded-[30px] font-black shadow-sm active:scale-95 transition-all flex items-center justify-center gap-2">
+                      <Trash2 size={20} /> 刪除
+                   </button>
+                )}
+                <button onClick={saveItinerary} className="flex-[2] bg-[#8DB359] text-white py-5 rounded-[30px] font-black shadow-lg active:scale-95 transition-all flex items-center justify-center gap-2">
+                   <Save size={20} /> 儲存
+                </button>
+             </div>
           </div>
         </div>
       )}
@@ -373,15 +461,14 @@ const App: React.FC = () => {
                  <div className="w-2 h-8 bg-[#8DB359] rounded-full"></div>
                  今日冒險
               </h2>
-              <button onClick={() => { setEditingItem({ day: activeDay, time: '12:00', type: 'SIGHT' }); setIsModalOpen(true); }} className="bg-white text-[#8DB359] px-5 py-3 rounded-[24px] text-sm font-black flex items-center gap-1 shadow-[0_4px_0_#EEDEB0] border-2 border-[#EEDEB0] active:translate-y-1 active:shadow-none transition-all">
+              <button onClick={() => { setEditingItinerary({ time: '12:00', type: 'SIGHT' }); setIsItineraryModalOpen(true); }} className="bg-white text-[#8DB359] px-5 py-3 rounded-[24px] text-sm font-black flex items-center gap-1 shadow-[0_4px_0_#EEDEB0] border-2 border-[#EEDEB0] active:translate-y-1 active:shadow-none transition-all">
                 <Plus size={18} /> 新增
               </button>
             </div>
-            <div className="relative px-8">{filteredItinerary.map(item => <TimelineCard key={item.id} item={item} onClick={(i) => { setViewingItem(i); setIsDetailOpen(true); }} />)}</div>
+            <div className="relative px-8">{filteredItinerary.map(item => <TimelineCard key={item.id} item={item} onClick={(i) => { setEditingItinerary(i); setIsItineraryModalOpen(true); }} />)}</div>
           </div>
         ) : activeTab === TabType.LEDGER ? (
           <div className="px-8 pb-12 pt-4">
-             {/* Expense Dashboard */}
              <div className="grid grid-cols-2 gap-4 mb-10">
                 <div className="bg-white rounded-[40px] p-6 border-4 border-[#EEDEB0] shadow-[0_8px_0_#EEDEB0]">
                    <div className="flex items-center gap-2 mb-2"><Coins className="text-[#8DB359]" size={16} /><span className="text-[10px] font-black text-[#A1887F] uppercase tracking-widest">總台幣</span></div>
@@ -392,148 +479,77 @@ const App: React.FC = () => {
                    <p className="text-2xl font-black text-[#4E342E] tabular-nums">$ {totalHkd}</p>
                 </div>
              </div>
-
              <div className="flex justify-between items-center mb-6">
-                <h2 className="text-2xl font-black text-[#4E342E] flex items-center gap-3"><div className="w-2 h-8 bg-amber-500 rounded-full"></div>收支明細</h2>
+                <h2 className="text-2xl font-black text-[#4E342E] flex items-center gap-3">收支明細</h2>
                 <button onClick={() => setIsExpenseModalOpen(true)} className="bg-[#8DB359] text-white px-5 py-3 rounded-[24px] text-sm font-black shadow-lg flex items-center gap-1 active:scale-90 transition-all"><Plus size={18} /> 記帳</button>
              </div>
-
-             <div className="space-y-4">
-                {expenses.length === 0 ? (
-                  <div className="py-20 text-center opacity-30"><Coins size={64} className="mx-auto mb-4" /><p className="font-black text-sm">仲未有數記低...</p></div>
-                ) : (
-                  expenses.map(exp => (
-                    <div key={exp.id} className="bg-white rounded-[35px] p-6 border-2 border-[#EEDEB0] shadow-[0_6px_0_rgba(238,222,176,0.3)] group relative">
-                       <div className="flex justify-between items-start">
-                          <div className="flex gap-4">
-                             <div className="w-12 h-12 bg-[#FFF9E5] rounded-2xl flex items-center justify-center text-xl shadow-sm border border-[#EEDEB0]">
-                                {exp.category === '食飯' ? '🍱' : exp.category === '交通' ? '🚌' : exp.category === '購物' ? '🛍️' : exp.category === '景點' ? '📸' : exp.category === '住宿' ? '🏨' : '🎒'}
-                             </div>
-                             <div>
-                                <h4 className="font-black text-[#4E342E]">{exp.description}</h4>
-                                <div className="flex items-center gap-2 mt-1">
-                                   <span className={`text-[9px] font-black px-2 py-0.5 rounded-full ${exp.paidBy === '大哥' ? 'bg-blue-100 text-blue-600' : 'bg-pink-100 text-pink-600'}`}>{exp.paidBy} 畀錢</span>
-                                   <span className="text-[9px] font-bold text-[#A1887F]">{exp.date}</span>
-                                </div>
-                             </div>
-                          </div>
-                          <div className="text-right">
-                             <p className="text-lg font-black text-[#4E342E] tabular-nums">{exp.amount}<span className="text-[10px] ml-1">TWD</span></p>
-                             <p className="text-[10px] font-bold text-[#A1887F]">$ {(exp.amount / rate).toFixed(1)} HKD</p>
-                          </div>
-                       </div>
-                       <button onClick={() => deleteExpense(exp.id)} className="absolute -top-2 -right-2 w-7 h-7 bg-rose-500 text-white rounded-full flex items-center justify-center shadow-lg scale-0 group-hover:scale-100 transition-transform"><X size={14}/></button>
-                    </div>
-                  ))
-                )}
-             </div>
-          </div>
-        ) : activeTab === TabType.INFO ? (
-          <div className="px-8 pb-8 pt-4">
-            <div className="mb-10">
-              <h2 className="text-2xl font-black text-[#4E342E] flex items-center gap-3 mb-6">
-                 <MapPin className="text-[#8DB359]" size={28} /> 旅行地圖
-              </h2>
-              <div className="relative bg-white rounded-[50px] overflow-hidden shadow-[0_10px_0_#EEDEB0] border-4 border-[#EEDEB0] aspect-[4/3]">
-                <img src="https://api.placeholder.com/600/400?text=Taipei+Map" className="w-full h-full object-cover opacity-60" alt="Map" />
-                <div className="absolute inset-0 flex items-center justify-center p-6">
-                   <a href="https://www.google.com/maps/search/?api=1&query=Taipei" target="_blank" rel="noreferrer" className="bg-[#8DB359] text-white px-8 py-5 rounded-[30px] font-black shadow-xl flex items-center gap-3 hover:scale-105 active:scale-95 transition-all text-center leading-tight">
-                      <Navigation size={20} /> 打開 Google Maps 行程
-                   </a>
-                </div>
-              </div>
-            </div>
-
-            <div className="mb-10">
-              <a href="https://niaspeedy.immigration.gov.tw/webacard/" target="_blank" rel="noreferrer" className="block bg-[#FFF9E5] rounded-[45px] p-8 shadow-[0_10px_0_#EEDEB0] border-4 border-[#EEDEB0] relative overflow-hidden group">
-                 <div className="absolute top-0 right-0 w-32 h-32 bg-[#8DB359]/10 rounded-full -translate-y-16 translate-x-16 group-hover:scale-110 transition-transform"></div>
-                 <h3 className="text-3xl font-black text-[#4E342E] mb-2">入台證申報 🛫</h3>
-                 <p className="text-[#8D6E63] font-bold mb-4">快啲搞掂佢，唔係冇得去！</p>
-                 <div className="bg-[#8DB359] w-14 h-14 rounded-full flex items-center justify-center shadow-lg text-white">
-                    <ArrowUpRight size={28} />
-                 </div>
-              </a>
-            </div>
-
-            <div>
-              <h2 className="text-2xl font-black text-[#4E342E] flex items-center gap-3 mb-8">
-                 <ShieldAlert className="text-rose-500" size={28} /> 緊急求助
-              </h2>
-              <div className="grid grid-cols-2 gap-6">
-                <a href="tel:110" className="bg-white rounded-[40px] p-8 text-center border-4 border-[#EEDEB0] shadow-[0_8px_0_#EEDEB0] active:translate-y-1 active:shadow-none transition-all">
-                   <p className="text-[10px] font-black text-[#A1887F] uppercase mb-3">報警 (110)</p>
-                   <p className="text-5xl font-black text-rose-500">110</p>
-                </a>
-                <a href="tel:119" className="bg-white rounded-[40px] p-8 text-center border-4 border-[#EEDEB0] shadow-[0_8px_0_#EEDEB0] active:translate-y-1 active:shadow-none transition-all">
-                   <p className="text-[10px] font-black text-[#A1887F] uppercase mb-3">救護 (119)</p>
-                   <p className="text-5xl font-black text-rose-500">119</p>
-                </a>
-              </div>
-            </div>
-          </div>
-        ) : activeTab === TabType.PREP ? (
-          <div className="px-8 pb-8 pt-4">
-             <div className="flex justify-between items-center mb-8">
-                <h2 className="text-2xl font-black text-[#4E342E]">準備清單 🎒</h2>
-                <button onClick={() => { setEditingPackingItem({ name: '', assignedTo: currentUser.name }); setIsPackingModalOpen(true); }} className="bg-white text-[#8DB359] px-5 py-3 rounded-[24px] text-sm font-black shadow-[0_4px_0_#EEDEB0] border-2 border-[#EEDEB0]"><Plus size={18} /> 新增</button>
-             </div>
-             {packingList.length < 5 && (
-                <div className="bg-white border-4 border-dashed border-[#EEDEB0] rounded-[45px] p-10 mb-8 text-center">
-                   <AlertCircle className="mx-auto text-[#8DB359] mb-4" size={48} /><h3 className="text-lg font-black text-[#4E342E] mb-2">導入物資？</h3>
-                   <button onClick={resetPackingList} className="w-full bg-[#8DB359] text-white py-5 rounded-[28px] font-black shadow-lg mt-4 flex items-center justify-center gap-2"><RotateCcw size={18} /> 導入 27 項必備</button>
-                </div>
-             )}
-             <div className="space-y-4">{packingList.map(item => (
-                <div key={item.id} className={`flex items-center justify-between p-6 rounded-[35px] border-2 transition-all ${item.completed ? 'bg-[#F5F5F5] border-[#E0E0E0] opacity-50' : 'bg-white border-[#EEDEB0] shadow-[0_6px_0_#EEDEB0]'}`}>
-                  <div className="flex items-center gap-5 flex-1 cursor-pointer" onClick={() => togglePackingItem(item.id)}>
-                    <div className={`w-8 h-8 rounded-2xl border-2 flex items-center justify-center transition-all ${item.completed ? 'bg-[#8DB359] border-[#8DB359]' : 'border-[#EEDEB0] bg-[#FFF9E5]'}`}>
-                      {item.completed && <CheckSquare className="text-white" size={18} />}
-                    </div>
-                    <div>
-                      <span className={`text-lg font-black ${item.completed ? 'line-through text-[#A1887F]' : 'text-[#4E342E]'}`}>{item.name}</span>
-                      <p className={`text-[10px] font-black tracking-widest uppercase mt-0.5 ${item.assignedTo === '大哥' ? 'text-[#8DB359]' : 'text-pink-500'}`}>{item.assignedTo}</p>
-                    </div>
-                  </div>
+             <div className="space-y-4">{expenses.map(exp => (
+                <div key={exp.id} className="bg-white rounded-[35px] p-6 border-2 border-[#EEDEB0] shadow-[0_6px_0_rgba(238,222,176,0.3)] relative group">
+                   <div className="flex justify-between items-start">
+                      <div className="flex gap-4">
+                         <div className="w-12 h-12 bg-[#FFF9E5] rounded-2xl flex items-center justify-center text-xl shadow-sm">
+                            {exp.category === '食飯' ? '🍱' : '🎒'}
+                         </div>
+                         <div>
+                            <h4 className="font-black text-[#4E342E]">{exp.description}</h4>
+                            <span className="text-[9px] font-black px-2 py-0.5 rounded-full bg-blue-100 text-blue-600">{exp.paidBy} 畀錢</span>
+                         </div>
+                      </div>
+                      <div className="text-right">
+                         <p className="text-lg font-black text-[#4E342E]">{exp.amount} TWD</p>
+                      </div>
+                   </div>
+                   <button onClick={() => deleteExpense(exp.id)} className="absolute -top-2 -right-2 bg-rose-500 text-white p-1 rounded-full opacity-0 group-hover:opacity-100 transition-opacity"><X size={12}/></button>
                 </div>
              ))}</div>
           </div>
         ) : activeTab === TabType.MEMBERS ? (
           <div className="px-8 pb-8 pt-4">
              <div className="flex items-center gap-5 mb-10">
-                <div className="bg-[#E8F5E9] p-4 rounded-3xl text-[#8DB359]"><Users size={32} /></div>
-                <div>
-                   <h2 className="text-3xl font-black text-[#4E342E]">Trip Members</h2>
-                   <p className="text-xs font-bold text-[#A1887F]">Collaborators for Taipei 2025</p>
-                </div>
+                <div className="bg-[#E8F5E9] p-5 rounded-[30px] text-[#8DB359] shadow-inner"><Users size={32} /></div>
+                <div><h2 className="text-3xl font-black text-[#4E342E]">Trip Members</h2><p className="text-xs font-bold text-[#A1887F]">Collaborators for Taipei 2025</p></div>
              </div>
-             
              <div className="grid grid-cols-2 gap-6">
-                {MEMBERS.map(member => (
-                  <div key={member.name} onClick={() => { setCurrentUser(member); }} className={`bg-white rounded-[45px] p-6 text-center border-4 transition-all active:scale-95 cursor-pointer relative ${currentUser.name === member.name ? 'border-[#8DB359] shadow-[0_12px_0_#E8F5E9]' : 'border-white shadow-[0_12px_0_rgba(78,52,46,0.05)]'}`}>
-                     <div className="relative mx-auto w-24 h-24 mb-5">
-                        <img src={member.avatar} alt={member.name} className={`w-full h-full object-cover rounded-full border-4 ${currentUser.name === member.name ? 'border-[#8DB359]' : 'border-[#F5F5F5]'}`} />
+                {members.map(member => (
+                  <div key={member.name} onClick={() => setCurrentMemberName(member.name)} className={`bg-white rounded-[45px] p-6 text-center border-4 transition-all active:scale-95 cursor-pointer relative ${currentUser.name === member.name ? 'border-[#8DB359] shadow-[0_12px_0_#E8F5E9]' : 'border-white shadow-[0_12px_0_rgba(78,52,46,0.05)]'}`}>
+                     <div className="relative mx-auto w-24 h-24 mb-5 group">
+                        <img src={member.avatar} alt={member.name} className={`w-full h-full object-cover rounded-full border-4 shadow-sm ${currentUser.name === member.name ? 'border-[#8DB359]' : 'border-[#F5F5F5]'}`} />
                         {currentUser.name === member.name && (
-                           <div className="absolute bottom-0 right-0 bg-[#4E342E] text-white p-2 rounded-full border-2 border-white shadow-md">
-                              <Camera size={14} />
-                           </div>
+                           <button onClick={(e) => { e.stopPropagation(); fileInputRef.current?.click(); }} className="absolute bottom-0 right-0 bg-[#4E342E] text-white p-2.5 rounded-full border-2 border-white shadow-xl hover:bg-[#8DB359] transition-colors"><Camera size={14} /></button>
                         )}
                      </div>
                      <h3 className="text-xl font-black text-[#4E342E] mb-1">{member.name}</h3>
-                     <p className="text-[10px] font-bold text-[#A1887F] uppercase tracking-wider mb-4">{member.role}</p>
-                     
-                     {currentUser.name === member.name ? (
-                        <div className="inline-block bg-[#E8F5E9] text-[#8DB359] text-[10px] font-black px-4 py-1 rounded-full uppercase tracking-widest">YOU</div>
-                     ) : (
-                        <div className="inline-block text-[#D7CCC8] text-[10px] font-black px-4 py-1 uppercase tracking-widest">Click to Login</div>
-                     )}
+                     <p className="text-[10px] font-bold text-[#A1887F] uppercase tracking-wider mb-4 leading-relaxed">{member.role}</p>
+                     {currentUser.name === member.name && <div className="inline-block bg-[#E8F5E9] text-[#8DB359] text-[10px] font-black px-5 py-1.5 rounded-full uppercase tracking-widest border border-[#8DB359]/20">YOU</div>}
                   </div>
                 ))}
              </div>
-             
-             <div className="mt-12 p-8 bg-[#FFF9E5] rounded-[45px] border-4 border-dashed border-[#EEDEB0] text-center">
-                <Leaf className="mx-auto text-[#8DB359] mb-4" size={32} />
-                <p className="text-sm font-bold text-[#8D6E63] italic">"兩個人去旅行，最緊要開心！"</p>
-             </div>
+          </div>
+        ) : activeTab === TabType.PREP ? (
+          <div className="px-8 pb-8 pt-4">
+             <h2 className="text-2xl font-black text-[#4E342E] mb-8">準備清單 🎒</h2>
+             <div className="space-y-4">{packingList.map(item => (
+                <div key={item.id} className={`flex items-center justify-between p-6 rounded-[35px] border-2 transition-all ${item.completed ? 'bg-[#F5F5F5] border-[#E0E0E0] opacity-50' : 'bg-white border-[#EEDEB0] shadow-[0_6px_0_#EEDEB0]'}`}>
+                  <div className="flex items-center gap-5 flex-1 cursor-pointer" onClick={() => togglePackingItem(item.id)}>
+                    <div className={`w-8 h-8 rounded-2xl border-2 flex items-center justify-center transition-all ${item.completed ? 'bg-[#8DB359] border-[#8DB359]' : 'border-[#EEDEB0] bg-[#FFF9E5]'}`}>
+                      {item.completed && <CheckSquare className="text-white" size={18} />}
+                    </div>
+                    <div><span className={`text-lg font-black ${item.completed ? 'line-through text-[#A1887F]' : 'text-[#4E342E]'}`}>{item.name}</span></div>
+                  </div>
+                </div>
+             ))}</div>
+          </div>
+        ) : activeTab === TabType.INFO ? (
+          <div className="px-8 pb-8 pt-4">
+             <h2 className="text-2xl font-black text-[#4E342E] mb-6"><MapPin className="text-[#8DB359]" size={28} /> 旅行資訊</h2>
+             <a href="tel:110" className="bg-white rounded-[40px] p-8 text-center border-4 border-[#EEDEB0] shadow-[0_8px_0_#EEDEB0] block mb-6">
+                <p className="text-[10px] font-black text-[#A1887F] uppercase mb-3">報警 (110)</p>
+                <p className="text-5xl font-black text-rose-500">110</p>
+             </a>
+             <a href="tel:119" className="bg-white rounded-[40px] p-8 text-center border-4 border-[#EEDEB0] shadow-[0_8px_0_#EEDEB0] block">
+                <p className="text-[10px] font-black text-[#A1887F] uppercase mb-3">救護 (119)</p>
+                <p className="text-5xl font-black text-rose-500">119</p>
+             </a>
           </div>
         ) : (
           <div className="p-20 text-center text-[#D7CCC8] font-black uppercase tracking-widest text-xs">開發中 🚧</div>
@@ -553,16 +569,6 @@ const App: React.FC = () => {
           </button>
         ))}
       </nav>
-
-      {/* Simplified Modal Placeholder */}
-      {(isModalOpen || isDetailOpen) && (
-        <div className="fixed inset-0 bg-[#4E342E]/60 backdrop-blur-md z-[120] flex items-center justify-center p-6">
-           <div className="bg-white w-full rounded-[50px] p-10 border-4 border-[#EEDEB0] shadow-2xl">
-              <h2 className="text-2xl font-black text-[#4E342E] mb-6">手帳編輯中... ✍️</h2>
-              <button onClick={() => {setIsModalOpen(false); setIsDetailOpen(false);}} className="w-full bg-[#8DB359] text-white py-5 rounded-[30px] font-black">完成</button>
-           </div>
-        </div>
-      )}
     </div>
   );
 };
